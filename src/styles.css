@@ -205,14 +205,14 @@
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
 @media (min-width: 1200px) and (min-height: 900px) {
-  .home-cockpit { height: 100%; min-height: 0; display: grid; grid-template-rows: 32px 85px 145px 220px 160px minmax(270px, 1fr); gap: 12px; }
+  .home-cockpit { height: 100%; min-height: 0; display: grid; grid-template-rows: 32px 85px 145px 205px 160px minmax(285px, 1fr); gap: 12px; }
   .home-cockpit > div:first-child { margin-bottom: 0; }
   .home-cockpit > .panel > div { padding-bottom: 10px; }
   .home-cockpit > .panel:last-child > div { display: flex; flex-direction: column; }
   .home-cockpit .calendar-grid > div { padding: 2px; }
   .home-cockpit .calendar-grid > div > div { margin-top: 0; line-height: 12px; }
   .home-cockpit .calendar-grid { flex: 1; min-height: 0; grid-auto-rows: 1fr; }
-  .home-cockpit .job-map-frame { height: 108px; }
+  .home-cockpit .job-map-frame { height: 93px; }
   .home-cockpit .job-map-legend { flex-wrap: nowrap; overflow-x: auto; }
   .home-cockpit .job-map-legend span { flex-shrink: 0; }
 }
