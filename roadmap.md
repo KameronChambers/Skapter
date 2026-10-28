@@ -1,6 +1,6 @@
-- [ ] Apply shared cockpit styling and readable page error boundaries.
-- [ ] Build Home stats, pipeline demo, activity, revenue, map and calendar.
-- [ ] Upgrade Inbox visuals and verify all conversations and controls.
-- [ ] Build inventory gauges, list toggle and recipe previews.
-- [ ] Add Agent timeline and health gauges.
-- [ ] Verify flows, hydration, tests and compact layouts.
+- [x] Apply shared cockpit styling and readable page error boundaries.
+- [x] Build Home stats, pipeline demo, activity, revenue, map and calendar.
+- [x] Upgrade Inbox visuals and verify all conversations and controls.
+- [x] Build inventory gauges, list toggle and recipe previews.
+- [x] Add Agent timeline and health gauges.
+- [x] Verify flows, hydration, tests and compact layouts.

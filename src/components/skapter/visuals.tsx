@@ -42,5 +42,5 @@ export const pipelineSteps = [{ label: "Message", icon: MessageSquare }, { label
 
 export function CarShape({ size = "Medium", className }: { size?: "Small" | "Medium" | "Large"; className?: string }) {
   const roof = size === "Small" ? "M30 38 L40 23 H66 L78 38" : size === "Large" ? "M24 38 L32 17 H78 L85 38" : "M25 38 L40 24 H68 L85 38";
-  return <svg viewBox="0 0 112 64" className={cn("w-24 text-primary", className)} aria-hidden="true"><path d={`${roof} L103 42 V52 H10 V42 Z`} fill="var(--primary)" fillOpacity=".12" stroke="currentColor" strokeWidth="2" /><path d="M44 27 H65 L74 37 H37 Z" fill="var(--primary)" fillOpacity=".25" /><circle cx="30" cy="51" r="8" fill="var(--background)" stroke="currentColor" strokeWidth="2" /><circle cx="85" cy="51" r="8" fill="var(--background)" stroke="currentColor" strokeWidth="2" /></svg>;
+  return <svg viewBox="0 0 112 64" className={cn("!h-auto !w-24 text-primary", className)} aria-hidden="true"><path d={`${roof} L103 42 V52 H10 V42 Z`} fill="var(--primary)" fillOpacity=".12" stroke="currentColor" strokeWidth="2" /><path d="M44 27 H65 L74 37 H37 Z" fill="var(--primary)" fillOpacity=".25" /><circle cx="30" cy="51" r="8" fill="var(--background)" stroke="currentColor" strokeWidth="2" /><circle cx="85" cy="51" r="8" fill="var(--background)" stroke="currentColor" strokeWidth="2" /></svg>;
 }
