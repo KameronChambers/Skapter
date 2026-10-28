@@ -212,4 +212,5 @@
   .home-cockpit .calendar-grid > div { padding: 2px; }
   .home-cockpit .calendar-grid > div > div { margin-top: 0; line-height: 12px; }
   .home-cockpit .calendar-grid { flex: 1; min-height: 0; grid-auto-rows: 1fr; }
+  .home-cockpit .job-map-frame { height: 104px; }
 }
