@@ -4,3 +4,4 @@
 - [x] Build inventory gauges, list toggle and recipe previews.
 - [x] Add Agent timeline and health gauges.
 - [x] Verify flows, hydration, tests and compact layouts.
+- [x] Add client-only dark Leaflet job map, seeded coordinates, service radius and SVG fallback; verify live pins and distance checks.

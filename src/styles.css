@@ -1,6 +1,8 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@import "leaflet/dist/leaflet.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -51,6 +53,12 @@
   --stock-low: oklch(0.74 0.18 50);
   --accent-cyan: #22D3EE;
   --accent-emerald: #34D399;
+  --job-full: var(--accent-cyan);
+  --job-interior: var(--accent-emerald);
+  --job-exterior: var(--primary);
+  --job-supply: var(--warning);
+  --job-ceramic: var(--foreground);
+  --job-other: var(--muted-foreground);
   --accent-gradient: linear-gradient(110deg, var(--accent-cyan), var(--accent-emerald));
   --grid-line: color-mix(in oklab, var(--foreground) 4%, transparent);
   --live-glow: 0 0 25px color-mix(in oklab, var(--primary) 10%, transparent);
@@ -168,6 +176,29 @@
 .timeline-entry { animation: slide-in 400ms ease-out both; }
 .gauge-stroke, .bottle-liquid { transition: all 700ms ease; }
 .critical-glow { animation: pulse-critical 2.5s ease-in-out infinite; }
+.job-map-frame { position: relative; height: 120px; isolation: isolate; overflow: hidden; border-radius: var(--radius-sm); background: var(--background); }
+.job-map, .job-map-loading, .job-map-fallback { position: absolute; inset: 0; }
+.job-map-loading { pointer-events: none; z-index: 1; }
+.job-map-credit { font-size: 8px; line-height: 12px; color: var(--muted-foreground); margin-top: 2px; }
+.job-map-credit a:hover { color: var(--primary); }
+.job-map-legend { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 9px; line-height: 12px; margin-top: 3px; }
+.job-map-legend span { display: inline-flex; align-items: center; gap: 3px; }
+.job-map-legend i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.job-full { color: var(--job-full); } .job-interior { color: var(--job-interior); }
+.job-exterior { color: var(--job-exterior); } .job-supply { color: var(--job-supply); }
+.job-ceramic { color: var(--job-ceramic); } .job-other { color: var(--job-other); }
+.job-marker-icon, .job-base-icon { background: none; border: none; }
+.job-pin { display: grid; width: 20px; height: 20px; place-items: center; }
+.job-pin > span { display: block; width: 8px; height: 8px; border: 1px solid var(--background); border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 20%, transparent); }
+.job-newest > span { animation: job-pulse 2s ease-out infinite; }
+.job-drop, .job-fallback-drop { animation: job-drop 650ms ease-out both; }
+.job-fallback-pulse { animation: pulse-live 2s ease-in-out infinite; }
+.job-base { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--card); border: 1px solid var(--foreground); color: var(--foreground); font-size: 16px; }
+.job-map-status { position: absolute; bottom: 4px; left: 5px; color: var(--muted-foreground); font-size: 9px; }
+.job-map .leaflet-control-zoom a { width: 22px; height: 22px; line-height: 22px; background: var(--card); color: var(--foreground); border-color: var(--border); }
+.job-map .leaflet-tooltip { background: var(--popover); color: var(--popover-foreground); border-color: var(--border); font-family: var(--font-sans); }
+@keyframes job-drop { from { opacity: 0; transform: translateY(-22px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes job-pulse { 50% { box-shadow: 0 0 0 7px color-mix(in oklab, currentColor 5%, transparent); } }
 @keyframes pulse-live { 50% { opacity: .45; box-shadow: 0 0 8px var(--primary); } }
 @keyframes pulse-critical { 50% { filter: drop-shadow(0 0 5px var(--danger)); } }
 @keyframes slide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -181,4 +212,7 @@
   .home-cockpit .calendar-grid > div { padding: 2px; }
   .home-cockpit .calendar-grid > div > div { margin-top: 0; line-height: 12px; }
   .home-cockpit .calendar-grid { flex: 1; min-height: 0; grid-auto-rows: 1fr; }
+  .home-cockpit .job-map-frame { height: 78px; }
+  .home-cockpit .job-map-legend { flex-wrap: nowrap; overflow-x: auto; }
+  .home-cockpit .job-map-legend span { flex-shrink: 0; }
 }

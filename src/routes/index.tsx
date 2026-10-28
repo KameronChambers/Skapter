@@ -10,6 +10,7 @@ import { useData } from "@/hooks/use-data";
 import { addBooking, DEMO_MONTH, getBookings, getDashboard, getExecutionLog, getPerformance, getTasks, getUrgentActions, runDemoBooking, toggleTask } from "@/lib/data";
 import { Dot, PageTitle, Panel, Pill, fmtTime } from "@/components/skapter/ui";
 import { CountUp, pipelineSteps, Ring, toolIcons } from "@/components/skapter/visuals";
+import { JobMap } from "@/components/skapter/JobMap";
 
 export const Route = createFileRoute("/")({ head: () => ({ meta: [
   { title: "Operations · Skapter" }, { name: "description", content: "SudBudd MD live operations, bookings, revenue and activity." },
@@ -54,10 +55,6 @@ function HomePage() {
     </div>
     <CalendarPanel />
   </div>;
-}
-function JobMap() {
-  const jobs = useData(getBookings, ["bookings"]) ?? [];
-  return <div><svg viewBox="0 0 300 150" className="h-32 w-full" aria-label="Detroit job locations"><path d="M5 12 L95 5 L115 60 L70 95 L8 75Z M100 5 L195 12 L185 65 L120 60Z M200 14 L286 25 L260 98 L190 67Z M10 80 L70 100 L130 65 L182 70 L210 135 L55 142Z M190 75 L255 104 L282 144 L215 138Z" fill="var(--muted)" fillOpacity=".5" stroke="var(--border)" strokeWidth="2" /><path d="M0 49 L300 70 M55 0 L140 150 M165 0 L190 150" fill="none" stroke="var(--primary)" strokeOpacity=".2" strokeWidth="2" /><text x="24" y="38" fill="var(--muted-foreground)" fontSize="9">MIDTOWN</text><text x="123" y="35" fill="var(--muted-foreground)" fontSize="9">EAST SIDE</text><text x="109" y="125" fill="var(--muted-foreground)" fontSize="9">DOWNTOWN</text>{jobs.slice(0, 4).map((j, i) => <g key={j.id}><title>{j.title}</title><circle cx={[72, 218, 147, 115][i]} cy={[63, 64, 99, 45][i]} r="9" fill={i === 3 ? "var(--warning)" : "var(--primary)"} fillOpacity=".15" /><circle cx={[72, 218, 147, 115][i]} cy={[63, 64, 99, 45][i]} r="3.5" fill={i === 3 ? "var(--warning)" : "var(--primary)"} /></g>)}</svg><div className="flex gap-3 text-[10px] text-muted-foreground"><span className="flex items-center gap-1"><Dot tone="green" /> Detail</span><span className="flex items-center gap-1"><Dot tone="amber" /> Supply run</span></div></div>;
 }
 function CalendarPanel() {
   const bookings = useData(getBookings, ["bookings"]) ?? [];
