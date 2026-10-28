@@ -195,7 +195,7 @@ function seed() {
     detail: string,
     provider: string,
     reason?: string,
-  ): LogEntry => ({ id: uid(), at: now - minsAgo * 60_000, action, status, detail, provider: provider === "fallback" ? "muse-spark-1.3" : "muse-spark-open", reason });
+  ): LogEntry => ({ id: uid(), at: now - minsAgo * 60_000, action, status, detail, provider: provider === "fallback" ? "muse-spark-1.3" : "muse-spark-open", ...(reason ? { reason } : {}) });
   const log: LogEntry[] = [
     l(3, "reserve_stock", "ok", "1x Full Detail Thu 10am", "gemini-flash"),
     l(4, "reply_customer", "ok", "Lucía Morales (ES)", "gemini-flash"),
@@ -317,7 +317,7 @@ export async function unflagConversation(conversationId: string) {
   const c = store.conversations.find((x) => x.id === conversationId);
   if (c) {
     c.flagged = false;
-    c.flagNote = undefined;
+    delete c.flagNote;
   }
   emit("conversations");
 }

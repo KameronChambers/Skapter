@@ -53,9 +53,9 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
           This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {error.message}
+          {error instanceof Error ? error.message : String(error)}
         </p>
-        <pre className="num mt-3 whitespace-pre-wrap break-all text-left text-xs">{error.stack}</pre>
+        <pre className="num mt-3 whitespace-pre-wrap break-all text-left text-xs">{error instanceof Error ? error.stack : ""}</pre>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {

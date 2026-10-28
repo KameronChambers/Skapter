@@ -4,16 +4,16 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export class PageBoundary extends Component<{ children: ReactNode; name: string }, { error: Error | null; componentStack: string }> {
-  state = { error: null as Error | null, componentStack: "" };
+  override state = { error: null as Error | null, componentStack: "" };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(_error: Error, info: ErrorInfo) { this.setState({ componentStack: info.componentStack ?? "" }); }
-  render() {
+  override componentDidCatch(_error: Error, info: ErrorInfo) { this.setState({ componentStack: info.componentStack ?? "" }); }
+  override render() {
     if (!this.state.error) return this.props.children;
     return <section className="h-full overflow-auto rounded-lg border border-danger/40 p-6"><h1 className="heading text-lg">{this.props.name}</h1><p className="my-3 text-danger">{this.state.error.message}</p><pre className="num whitespace-pre-wrap break-all text-xs text-muted-foreground">{this.state.error.stack}{this.state.componentStack}</pre><Button className="mt-4" onClick={() => this.setState({ error: null, componentStack: "" })}>Try again</Button></section>;
   }
 }
 
-export function CountUp({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
+export function CountUp({ value, suffix = "", prefix = "" }: { value: number; suffix?: string | undefined; prefix?: string | undefined }) {
   const [shown, setShown] = useState(0);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setShown(value); return; }

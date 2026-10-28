@@ -32,7 +32,7 @@ export const Route = createFileRoute("/inbox")({
     ],
   }),
   component: InboxPage,
-  errorComponent: ({ error }: ErrorComponentProps) => <section className="h-full overflow-auto p-6"><h1 className="heading">InboxPage</h1><p className="my-3 text-danger">{error.message}</p><pre className="num whitespace-pre-wrap break-all text-xs">{error.stack}</pre></section>,
+  errorComponent: ({ error }: ErrorComponentProps) => <section className="h-full overflow-auto p-6"><h1 className="heading">InboxPage</h1><p className="my-3 text-danger">{error instanceof Error ? error.message : String(error)}</p><pre className="num whitespace-pre-wrap break-all text-xs">{error instanceof Error ? error.stack : ""}</pre></section>,
 });
 
 const filters = ["Spam", "Inquiry", "Customers", "Flagged", "Unread", "Unread agent responses"] as const;
