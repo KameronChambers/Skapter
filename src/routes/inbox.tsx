@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Flag, Search, Send, Smartphone } from "lucide-react";
+import { createFileRoute, type ErrorComponentProps } from "@tanstack/react-router";
+import { Bot, Flag, Instagram, MessageCircle, Search, Send, Smartphone, User } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,18 +17,22 @@ import {
   type Conversation,
 } from "@/lib/data";
 import { Dot, PageTitle, Panel, Pill } from "@/components/skapter/ui";
+import { Avatar, Ring } from "@/components/skapter/visuals";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/inbox")({
   head: () => ({
     meta: [
       { title: "Inbox · Skapter" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "description", content: "All WhatsApp and Instagram DMs for SudBudd MD in one place." },
       { property: "og:title", content: "Inbox · Skapter" },
       { property: "og:description", content: "All WhatsApp and Instagram DMs for SudBudd MD in one place." },
     ],
   }),
   component: InboxPage,
+  errorComponent: ({ error }: ErrorComponentProps) => <section className="h-full overflow-auto p-6"><h1 className="heading">InboxPage</h1><p className="my-3 text-danger">{error.message}</p><pre className="num whitespace-pre-wrap break-all text-xs">{error.stack}</pre></section>,
 });
 
 const filters = ["Spam", "Inquiry", "Customers", "Flagged", "Unread", "Unread agent responses"] as const;
@@ -41,8 +45,8 @@ const match = (c: Conversation, f: Filter) =>
   : f === "Unread" ? c.unread
   : c.unreadAgent;
 
-const ago = (t: number) => {
-  const h = (Date.now() - t) / 3600_000;
+const ago = (t: number, now: number) => {
+  const h = (now - t) / 3600_000;
   return h < 1 ? `${Math.max(1, Math.round(h * 60))}m` : h < 24 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`;
 };
 
@@ -55,6 +59,8 @@ function InboxPage() {
   const [sort, setSort] = useState<"new" | "old">("new");
   const [selected, setSelected] = useState<string>("c1");
   const [simOpen, setSimOpen] = useState(false);
+  const [now, setNow] = useState(0);
+  useEffect(() => { setNow(Date.now()); }, []);
 
   const list = useMemo(
     () =>
@@ -67,7 +73,7 @@ function InboxPage() {
   const current = convs.find((c) => c.id === selected);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-[520px] flex-col">
       <PageTitle
         sub={
           <Button variant="outline" size="sm" onClick={() => setSimOpen((o) => !o)}>
@@ -77,7 +83,7 @@ function InboxPage() {
       >
         Inbox
       </PageTitle>
-      <div className={cn("grid min-h-0 flex-1 gap-4", simOpen ? "grid-cols-[340px_1fr_280px_300px]" : "grid-cols-[360px_1fr_300px]")}>
+      <div className={cn("grid min-h-0 flex-1 gap-3 overflow-x-auto", simOpen ? "grid-cols-[250px_minmax(320px,1fr)_240px_280px]" : "grid-cols-[250px_minmax(320px,1fr)_240px]")}>
         <Panel bodyClassName="flex flex-col gap-3 px-0">
           <div className="space-y-3 px-4">
             <div className="relative">
@@ -86,42 +92,38 @@ function InboxPage() {
             </div>
             <div className="flex flex-wrap gap-1.5">
               {filters.map((f) => (
-                <button
+                <Button variant="ghost" size="sm"
                   key={f}
-                  className={cn("pill", active.includes(f) ? "border-foreground text-foreground" : "text-muted-foreground hover:text-foreground")}
+                  className={cn("pill h-auto", active.includes(f) ? "border-foreground text-foreground" : "text-muted-foreground hover:text-foreground")}
                   onClick={() => setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]))}
                 >
                   {f}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="flex gap-1.5 text-xs">
               {(["new", "old"] as const).map((s) => (
-                <button key={s} className={cn("pill", sort === s ? "border-foreground" : "text-muted-foreground")} onClick={() => setSort(s)}>
+                <Button variant="ghost" size="sm" key={s} className={cn("pill h-auto", sort === s ? "border-foreground" : "text-muted-foreground")} onClick={() => setSort(s)}>
                   {s === "new" ? "Newest" : "Oldest"}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
           <ul className="min-h-0 flex-1 divide-y overflow-y-auto border-t">
             {list.map((c) => (
               <li key={c.id}>
-                <button
-                  className={cn("w-full px-4 py-3 text-left hover:bg-accent/60", selected === c.id && "bg-accent")}
+                <Button variant="ghost"
+                  aria-label={`Open ${c.name}`}
+                  className={cn("h-auto w-full justify-start rounded-none whitespace-normal px-3 py-3 text-left hover:bg-accent/60", selected === c.id && "nav-active")}
                   onClick={() => { setSelected(c.id); markRead(c.id); }}
                 >
-                  <div className="flex items-center gap-2">
-                    {(c.unread || c.unreadAgent) && <Dot tone={c.unread ? "green" : "amber"} />}
-                    <span className="truncate text-sm font-medium">{c.name}</span>
-                    {c.flagged && <Flag className="size-3 text-danger" />}
-                    <span className="num ml-auto text-xs text-muted-foreground">{ago(c.lastAt)}</span>
+                  <Avatar name={c.name} className={c.channel === "Instagram" ? "border-warning/20 bg-warning/10 text-warning" : ""} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5"><span className="truncate text-xs font-medium">{c.name}</span>{c.flagged && <Flag className="size-3 shrink-0 text-danger" />}{(c.unread || c.unreadAgent) && <Dot tone={c.unread ? "green" : "amber"} />}</div>
+                    <p className="mt-1 truncate text-[11px] font-normal text-muted-foreground">{c.preview}</p>
+                    <div className="mt-1.5 flex items-center gap-2 text-muted-foreground"><span title={c.channel}>{c.channel === "Instagram" ? <Instagram className="size-3" /> : c.channel === "Simulated" ? <Smartphone className="size-3" /> : <MessageCircle className="size-3" />}</span><span title={c.category}><Dot tone={c.category === "Spam" ? "muted" : c.category === "Inquiry" ? "amber" : "green"} /></span><span className="num ml-auto text-[10px]">{now ? ago(c.lastAt, now) : "—"}</span></div>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{c.preview}</p>
-                  <div className="mt-1.5 flex gap-1.5">
-                    <Pill>{c.category}</Pill>
-                    <Pill>{c.channel}</Pill>
-                  </div>
-                </button>
+                </Button>
               </li>
             ))}
             {list.length === 0 && <li className="px-4 py-6 text-sm text-muted-foreground">No conversations.</li>}
@@ -141,11 +143,11 @@ function Thread({ conv }: { conv: Conversation }) {
   const [flagOpen, setFlagOpen] = useState(false);
   const [note, setNote] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [msgs.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [msgs.length, conv.id]);
 
   return (
     <Panel
-      title={<span className="flex items-center gap-2">{conv.name}<Pill>{conv.channel}</Pill></span>}
+      title={<span className="flex items-center gap-2"><Avatar name={conv.name} className="size-8" /><span>{conv.name}<span className="mt-1 block text-[10px] font-normal text-muted-foreground">{conv.channel}</span></span></span>}
       action={
         conv.flagged ? (
           <Button variant="outline" size="sm" onClick={() => unflagConversation(conv.id)}>
@@ -171,10 +173,11 @@ function Thread({ conv }: { conv: Conversation }) {
               className={cn(
                 "max-w-[75%] rounded-lg px-3 py-2 text-sm",
                 m.sender === "customer" && "border bg-card",
-                m.sender === "agent" && "border border-dashed bg-muted/40",
+                m.sender === "agent" && "border border-primary/30 bg-primary/5",
                 m.sender === "owner" && "bg-primary text-primary-foreground",
               )}
             >
+              {m.sender === "agent" && <span className="mb-1 flex items-center gap-1 text-[10px] text-primary"><Bot className="size-3" />AI</span>}
               {m.text}
             </div>
           </div>
@@ -200,7 +203,8 @@ function Thread({ conv }: { conv: Conversation }) {
 
 function Profile({ conv }: { conv: Conversation }) {
   return (
-    <Panel title="Customer Profile">
+    <Panel title={<span className="flex items-center gap-2"><User className="size-4" />Customer Profile</span>}>
+      <div className="mb-4 flex items-center gap-3"><Avatar name={conv.name} className="size-12" /><div><p className="text-sm">{conv.name}</p><Pill tone={conv.category === "Customer" ? "green" : "amber"}>{conv.category}</Pill></div>{conv.id === "c1" && <div className="ml-auto w-12"><Ring value={22 / 24 * 100} danger label="Mark Vance waiting 22 hours"><span className="num text-xs text-danger">22h</span></Ring></div>}</div>
       <dl className="divide-y text-sm">
         <div className="py-2"><dt className="text-xs text-muted-foreground">Name</dt><dd>{conv.name}</dd></div>
         <div className="py-2"><dt className="text-xs text-muted-foreground">Address</dt><dd className="num">{conv.address ?? "—"}</dd></div>
@@ -235,7 +239,7 @@ function Simulator({ onSent }: { onSent: (id: string) => void }) {
         <div className="mx-auto mb-3 h-1.5 w-16 rounded-full bg-muted" />
         <div className="mb-3 flex justify-center gap-1">
           {(["EN", "ES"] as const).map((l) => (
-            <button key={l} className={cn("pill", lang === l ? "border-foreground" : "text-muted-foreground")} onClick={() => setLang(l)}>{l}</button>
+            <Button variant="ghost" size="sm" key={l} className={cn("pill h-auto", lang === l ? "border-foreground" : "text-muted-foreground")} onClick={() => setLang(l)}>{l}</Button>
           ))}
         </div>
         <div className="flex-1" />

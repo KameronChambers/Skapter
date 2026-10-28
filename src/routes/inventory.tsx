@@ -1,84 +1,34 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { FlaskConical, LayoutGrid, List, Package, ShoppingBag } from "lucide-react";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useData } from "@/hooks/use-data";
-import { getInventory, stockPercent, stockStatus, type StockStatus } from "@/lib/data";
+import { getInventory, getRecipes, recipeAmount, stockPercent, stockStatus, type InventoryItem, type StockStatus, type VehicleSize } from "@/lib/data";
 import { PageTitle, Panel, Pill, fmtMoney, type Tone } from "@/components/skapter/ui";
+import { CarShape } from "@/components/skapter/visuals";
 
-export const Route = createFileRoute("/inventory")({
-  head: () => ({
-    meta: [
-      { title: "Inventory · Skapter" },
-      { name: "description", content: "Supply levels and an automatic shopping list for SudBudd MD." },
-      { property: "og:title", content: "Inventory · Skapter" },
-      { property: "og:description", content: "Supply levels and an automatic shopping list for SudBudd MD." },
-    ],
-  }),
-  component: InventoryPage,
-});
-
-const tone: Record<StockStatus, Tone> = { Great: "green", Good: "green", Fine: "amber", Low: "amber", Critical: "red" };
-
+export const Route = createFileRoute("/inventory")({ head: () => ({ meta: [
+  { title: "Inventory · Skapter" }, { name: "description", content: "Supply gauges, service recipes and shopping for SudBudd MD." },
+  { property: "og:title", content: "Inventory · Skapter" }, { property: "og:description", content: "Supply gauges, service recipes and shopping for SudBudd MD." },
+  { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" },
+] }), component: InventoryPage });
+const tones: Record<StockStatus, Tone> = { Great: "green", Good: "green", Fine: "amber", Low: "amber", Critical: "red" };
+const colors: Record<StockStatus, string> = { Great: "var(--success)", Good: "var(--success)", Fine: "var(--warning)", Low: "var(--stock-low)", Critical: "var(--danger)" };
 function InventoryPage() {
-  const items = (useData(getInventory, ["inventory"]) ?? []).map((i) => {
-    const pct = stockPercent(i);
-    return { ...i, pct, status: stockStatus(pct) };
-  });
-  const shopping = items.filter((i) => i.status === "Low" || i.status === "Critical").sort((a, b) => a.pct - b.pct);
-  const recommended = items.filter((i) => i.status === "Fine");
-
-  return (
-    <div className="flex h-full flex-col">
-      <PageTitle>Inventory</PageTitle>
-      <div className="grid min-h-0 flex-1 grid-rows-[3fr_2fr] gap-4">
-        <Panel title="Stock">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr className="border-b">
-                <th className="py-2 font-normal">Item</th>
-                <th className="py-2 text-right font-normal">Price</th>
-                <th className="py-2 text-right font-normal">Total Stock</th>
-                <th className="py-2 pl-8 font-normal">Stock %</th>
-                <th className="py-2 font-normal">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {items.map((i) => (
-                <tr key={i.id}>
-                  <td className="py-2.5">{i.name}</td>
-                  <td className="num py-2.5 text-right">{fmtMoney(i.price)}</td>
-                  <td className="num py-2.5 text-right">{i.stock}/{i.capacity}</td>
-                  <td className="py-2.5 pl-8">
-                    <div className="flex items-center gap-3">
-                      <div className="h-1 w-32 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full bg-foreground/70" style={{ width: `${i.pct}%` }} />
-                      </div>
-                      <span className="num text-xs text-muted-foreground">{i.pct}%</span>
-                    </div>
-                  </td>
-                  <td className="py-2.5"><Pill tone={tone[i.status]}>{i.status}</Pill></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-        <Panel title="Shopping List" action={<Pill>Auto-generated</Pill>}>
-          <ul className="divide-y text-sm">
-            {[...shopping, ...recommended].map((i) => (
-              <li key={i.id} className="flex items-center justify-between py-2.5">
-                <span className="flex items-center gap-3">
-                  {i.name}
-                  {i.status === "Fine" && <Pill>recommended</Pill>}
-                </span>
-                <span className="flex items-center gap-4">
-                  <span className="num text-xs text-muted-foreground">
-                    need {i.capacity - i.stock} · {fmtMoney((i.capacity - i.stock) * i.price)}
-                  </span>
-                  <Pill tone={tone[i.status]}>{i.status}</Pill>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      </div>
-    </div>
-  );
+  const items = useData(getInventory, ["inventory"]) ?? [];
+  const recipes = useData(getRecipes, []) ?? [];
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [size, setSize] = useState<VehicleSize>("Medium");
+  const [service, setService] = useState("Full Detail");
+  const selected = recipes.find(r => r.service === service);
+  const shopping = items.filter(i => stockPercent(i) < 60).sort((a,b) => stockPercent(a) - stockPercent(b));
+  return <div className="flex min-h-full flex-col"><PageTitle sub={<Pill>{items.length} consumables</Pill>}>Inventory</PageTitle><Tabs defaultValue="stock" className="flex flex-1 flex-col"><div className="mb-3 flex justify-between"><TabsList><TabsTrigger value="stock"><Package className="mr-2 size-3" />Stock</TabsTrigger><TabsTrigger value="recipes"><FlaskConical className="mr-2 size-3" />Recipes</TabsTrigger></TabsList><div className="flex gap-1"><Button variant={view === "grid" ? "secondary" : "ghost"} size="icon" aria-label="Grid view" onClick={() => setView("grid")}><LayoutGrid /></Button><Button variant={view === "list" ? "secondary" : "ghost"} size="icon" aria-label="List view" onClick={() => setView("list")}><List /></Button></div></div>
+    <TabsContent value="stock" className="space-y-4"><Stock items={items} view={view} /><Panel title={<span className="flex items-center gap-2"><ShoppingBag className="size-4" />Shopping list</span>} action={<Pill>Auto-generated</Pill>}><ul className="divide-y">{shopping.map(i => { const status=stockStatus(stockPercent(i)); return <li key={i.id} className="flex flex-wrap items-center gap-2 py-3 text-xs"><FlaskConical className="size-4 text-muted-foreground" /><span>{i.name}</span>{status === "Fine" && <Pill>recommended</Pill>}<span className="num ml-auto text-muted-foreground">{i.capacity-i.stock} packs · {fmtMoney((i.capacity-i.stock)*i.price)}</span><Pill tone={tones[status]}>{status}</Pill></li>; })}</ul></Panel></TabsContent>
+    <TabsContent value="recipes" className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-4 border-y py-4"><div className="flex gap-2">{(["Small", "Medium", "Large"] as const).map(s => <Button key={s} variant={s === size ? "secondary" : "ghost"} className="h-auto flex-col px-3 py-2" onClick={() => setSize(s)}><CarShape size={s} className="w-16" /><span className="text-xs">{s}</span></Button>)}</div><div className="flex flex-wrap gap-2">{recipes.map(r => <Button key={r.service} size="sm" variant={service === r.service ? "default" : "outline"} onClick={() => setService(r.service)}>{r.service}</Button>)}</div></div><div className="flex flex-wrap gap-2">{selected?.ingredients.map(ingredient => <Pill key={ingredient.id}><FlaskConical className="size-3 text-primary" />{items.find(i=>i.id===ingredient.id)?.name}<span className="num text-primary">×{recipeAmount(ingredient.amount,size)}</span></Pill>)}</div><Stock items={items} view={view} amounts={Object.fromEntries(selected?.ingredients.map(i=>[i.id,recipeAmount(i.amount,size)]) ?? [])} /></TabsContent>
+  </Tabs></div>;
+}
+function Stock({ items, view, amounts = {} }: { items: InventoryItem[]; view: "grid" | "list"; amounts?: Record<string, number> }) {
+  if (view === "list") return <Panel><div className="overflow-x-auto"><table className="w-full min-w-[480px] text-xs"><thead className="text-left text-muted-foreground"><tr className="border-b"><th className="pb-3">Item</th><th>Price</th><th>Total stock</th><th>Stock %</th><th>Status</th></tr></thead><tbody className="divide-y">{items.map(i=><tr key={i.id}><td className="flex items-center gap-2 py-4"><FlaskConical className="size-3" />{i.name}</td><td className="num">{fmtMoney(i.price)}</td><td className="num">{i.stock}/{i.capacity}</td><td className="num">{stockPercent(i)}%</td><td><Pill tone={tones[stockStatus(stockPercent(i))]}>{stockStatus(stockPercent(i))}</Pill></td></tr>)}</tbody></table></div></Panel>;
+  return <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">{items.map(i => { const pct=stockPercent(i);const status=stockStatus(pct);const preview=Math.max(0,(i.stock-(amounts[i.id]??0))/i.capacity*100);const id=`bottle-${i.id}`;return <section key={i.id} className="panel stat-tile p-4"><div className="flex items-center justify-between"><FlaskConical className="size-4 text-muted-foreground" /><Pill tone={tones[status]}>{status}</Pill></div><svg viewBox="0 0 100 160" className={"mx-auto my-4 h-36 " + (status === "Critical" ? "critical-glow" : "")} aria-label={`${i.name} ${pct}% stock`}><defs><clipPath id={id}><path d="M36 25 H64 V42 Q78 48 78 65 V140 Q78 148 70 148 H30 Q22 148 22 140 V65 Q22 48 36 42Z" /></clipPath></defs><path d="M36 25 H64 V42 Q78 48 78 65 V140 Q78 148 70 148 H30 Q22 148 22 140 V65 Q22 48 36 42Z" fill="var(--muted)" fillOpacity=".3" stroke="var(--border)" strokeWidth="2" /><g clipPath={`url(#${id})`}><rect x="20" y={148-pct*1.2} width="60" height={pct*1.2} fill={colors[status]} fillOpacity=".12" /><rect className="bottle-liquid" x="20" y={148-preview*1.2} width="60" height={preview*1.2} fill={colors[status]} fillOpacity=".65" /></g><rect x="34" y="12" width="32" height="14" rx="3" fill="var(--muted)" stroke="var(--border)" /><path d="M34 16 H66 M34 21 H66" stroke="var(--muted-foreground)" strokeOpacity=".3" /><text x="50" y="104" textAnchor="middle" fill="var(--foreground)" fontSize="18" fontFamily="monospace">{Math.round(preview)}%</text><path d="M28 60 V132" stroke="var(--foreground)" strokeOpacity=".15" strokeWidth="3" strokeLinecap="round" /></svg><h2 className="text-xs font-medium">{i.name}</h2><div className="num mt-2 text-lg">{i.stock}<span className="text-xs text-muted-foreground"> / {i.capacity} packs</span></div><div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span className="num">{fmtMoney(i.price)}</span>{amounts[i.id] && <span className="num text-primary">−{amounts[i.id]} preview</span>}</div></section>;})}</div>;
 }
