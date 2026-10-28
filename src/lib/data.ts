@@ -36,11 +36,15 @@ export interface InventoryItem {
   stock: number;
   capacity: number;
 }
+export type JobService = "Full Detail" | "Interior" | "Exterior Wash" | "Supply run" | "Ceramic Coat" | "Other";
 export interface Booking {
   id: string;
   title: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
+  lat: number;
+  lng: number;
+  service: JobService;
 }
 export interface LogEntry {
   id: string;
@@ -69,6 +73,8 @@ export interface UrgentAction {
 export interface Settings {
   businessName: string;
   modelStatus: "live" | "fallback";
+  base: { lat: number; lng: number };
+  serviceRadiusMiles: number;
 }
 export interface Performance {
   score: number;
@@ -174,11 +180,11 @@ function seed() {
     return iso(x);
   };
   const bookings: Booking[] = [
-    { id: uid(), title: "Roy Henderson · Full Detail", date: d(0), time: "10:00" },
-    { id: uid(), title: "Lucía Morales · Full Detail", date: d(2), time: "10:00" },
-    { id: uid(), title: "Kelly O'Brien · Interior", date: d(5), time: "13:30" },
-    { id: uid(), title: "Supply run", date: d(0), time: "16:00" },
-    { id: uid(), title: "Devon Price · Exterior Wash", date: d(-3), time: "09:00" },
+    { id: uid(), title: "Roy Henderson · Full Detail", date: d(0), time: "10:00", lat: 42.411, lng: -82.917, service: "Full Detail" },
+    { id: uid(), title: "Lucía Morales · Full Detail", date: d(2), time: "10:00", lat: 42.393, lng: -82.954, service: "Full Detail" },
+    { id: uid(), title: "Kelly O'Brien · Interior", date: d(5), time: "13:30", lat: 42.337, lng: -83.054, service: "Interior" },
+    { id: uid(), title: "Supply run", date: d(0), time: "16:00", lat: 42.362, lng: -83.086, service: "Supply run" },
+    { id: uid(), title: "Devon Price · Exterior Wash", date: d(-3), time: "09:00", lat: 42.351, lng: -83.071, service: "Exterior Wash" },
   ];
   const inventory: InventoryItem[] = [
     { id: "i1", name: "Clay bar", price: 14.99, stock: 2, capacity: 20 },
@@ -213,7 +219,7 @@ function seed() {
     { id: "t2", text: "Go shopping for new supplies today @ 4:00pm", done: false },
     { id: "t3", text: "Complete detail for Roy Henderson, Detroit 48236", done: false },
   ];
-  const settings: Settings = { businessName: "SudBudd MD", modelStatus: "live" };
+  const settings: Settings = { businessName: "SudBudd MD", modelStatus: "live", base: { lat: 42.348, lng: -83.058 }, serviceRadiusMiles: 12 };
   return { conversations, messages, bookings, inventory, log, rules, tasks, settings };
 }
 
@@ -275,9 +281,34 @@ export async function toggleTask(id: string) {
 export async function getBookings(): Promise<Booking[]> {
   return clone(store.bookings);
 }
-export async function addBooking(b: Omit<Booking, "id">) {
-  store.bookings.push({ ...b, id: uid() });
+export async function addBooking(b: Pick<Booking, "title" | "date" | "time"> & Partial<Pick<Booking, "lat" | "lng" | "service">>) {
+  // Calendar events without a job location occur at the seeded business base.
+  store.bookings.push({ ...store.settings.base, service: "Other", ...b, id: uid() });
   emit("bookings");
+}
+
+/** Great-circle distance in statute miles. */
+export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const a = Math.sin(radians(lat2 - lat1) / 2) ** 2 + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(radians(lng2 - lng1) / 2) ** 2;
+  return 3958.7613 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a))));
+}
+
+export async function getJobMapData() {
+  const settings = await getSettings();
+  const bookings = await getBookings();
+  const jobs = bookings.map(job => ({ ...job, withinServiceArea: distanceMiles(settings.base.lat, settings.base.lng, job.lat, job.lng) <= settings.serviceRadiusMiles }));
+  const latRadius = settings.serviceRadiusMiles / 69;
+  const lngRadius = latRadius / Math.cos(settings.base.lat * Math.PI / 180);
+  return {
+    settings, jobs, newestId: bookings.at(-1)?.id,
+    bounds: {
+      south: Math.min(settings.base.lat - latRadius, ...jobs.map(j => j.lat)),
+      north: Math.max(settings.base.lat + latRadius, ...jobs.map(j => j.lat)),
+      west: Math.min(settings.base.lng - lngRadius, ...jobs.map(j => j.lng)),
+      east: Math.max(settings.base.lng + lngRadius, ...jobs.map(j => j.lng)),
+    },
+  };
 }
 
 // ---------- Inbox ----------
@@ -411,7 +442,7 @@ export async function getDashboard() {
 }
 
 export async function runDemoBooking() {
-  const booking = { title: "Lucía Morales · Full Detail", date: DEMO_DATE, time: "14:00" };
+  const booking = { title: "Lucía Morales · Full Detail", date: DEMO_DATE, time: "14:00", lat: 42.385, lng: -82.976, service: "Full Detail" as const };
   await addBooking(booking);
   store.log.unshift({ id: uid(), at: Date.now(), action: "create_booking", status: "ok", detail: booking.title, provider: "muse-spark-open" });
   emit("log");
