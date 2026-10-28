@@ -26,6 +26,7 @@ export function JobMap() {
     let cancelled = false;
     let observer: ResizeObserver | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let resizeFrame: number | undefined;
     let instance: LeafletMap | undefined;
     const fail = () => { if (!cancelled) setFailure("Basemap unavailable"); };
     async function initialize() {
@@ -51,6 +52,23 @@ export function JobMap() {
         }).bindTooltip(data.settings.businessName).addTo(instance);
         pins.current = L.layerGroup().addTo(instance);
         const tiles = bridge.maplibreGL({ style: "https://tiles.openfreemap.org/styles/dark" });
+        // The adapter queues uncancellable resize frames that can outlive removal.
+        // Replace that callback with a cancellable, guarded equivalent.
+        const resizeLayer = tiles as typeof tiles & { _transitionEnd: () => void; _resizeContainer: () => void; _zoomEnd: () => void };
+        resizeLayer._transitionEnd = () => {
+          if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
+          resizeFrame = requestAnimationFrame(() => {
+            if (cancelled || !instance) return;
+            try {
+              resizeLayer._resizeContainer();
+              const glMap = tiles.getMaplibreMap();
+              const offset = instance.latLngToContainerPoint(instance.getBounds().getNorthWest());
+              L.DomUtil.setTransform(tiles.getCanvas(), offset, 1);
+              glMap.once("moveend", () => { if (!cancelled) resizeLayer._zoomEnd(); });
+              glMap.jumpTo({ center: instance.getCenter(), zoom: instance.getZoom() - 1 });
+            } catch { fail(); }
+          });
+        };
         tiles.on("tileerror", fail);
         tiles.addTo(instance);
         const basemap = tiles.getMaplibreMap();
@@ -65,6 +83,7 @@ export function JobMap() {
     void initialize();
     return () => {
       cancelled = true;
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       if (timeout) clearTimeout(timeout);
       observer?.disconnect();
       try { instance?.remove(); } catch { /* Already removed by a failed layer. */ }
