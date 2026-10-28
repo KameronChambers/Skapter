@@ -10,7 +10,7 @@ const toneClass: Record<Tone, string> = {
 };
 
 export function Dot({ tone, className }: { tone: Tone; className?: string }) {
-  return <span className={cn("inline-block size-2 shrink-0 rounded-full", toneClass[tone], className)} />;
+  return <span className={cn("inline-block size-2 shrink-0 rounded-full", toneClass[tone], tone === "green" && "live-dot", className)} />;
 }
 
 export function Pill({ children, tone, className }: { children: ReactNode; tone?: Tone; className?: string }) {
@@ -38,12 +38,12 @@ export function Panel({
   return (
     <section className={cn("panel flex flex-col overflow-hidden", className)}>
       {title && (
-        <header className="flex items-center justify-between gap-2 px-6 pt-5 pb-3">
-          <h2 className="heading text-base">{title}</h2>
+        <header className="flex items-center justify-between gap-2 px-4 pt-4 pb-3">
+          <h2 className="heading text-sm">{title}</h2>
           {action}
         </header>
       )}
-      <div className={cn("min-h-0 flex-1 overflow-y-auto px-6 pb-6", !title && "pt-6", bodyClassName)}>{children}</div>
+      <div className={cn("min-h-0 flex-1 overflow-y-auto px-4 pb-4", !title && "pt-4", bodyClassName)}>{children}</div>
     </section>
   );
 }

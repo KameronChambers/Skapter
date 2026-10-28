@@ -10,3 +10,7 @@
 <!-- LOVABLE:END -->
 
 - All app data reads/writes go through src/lib/data.ts (in-memory now, DB later); components never hold data logic.
+
+- Keep dashboard demo metrics, recipe quantities, booking simulation and seeded timestamps in the central data layer so visual components do not own data operations.
+- Use a keyed shared page error boundary plus route error components for actual error messages and stacks; reset the shared boundary on navigation.
+- Keep initial time-dependent UI deterministic and update current-time highlights only after mount to prevent hydration mismatches.

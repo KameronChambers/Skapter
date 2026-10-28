@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Mic, MicOff, Send } from "lucide-react";
+import { Activity, Clock, Mic, MicOff, Send, ShieldCheck } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,13 +7,16 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useData } from "@/hooks/use-data";
-import { askAgent, getErrors, getExecutionLog, getRules, saveRule, toggleRule } from "@/lib/data";
+import { askAgent, getDashboard, getErrors, getExecutionLog, getRules, saveRule, toggleRule } from "@/lib/data";
+import { Ring, CountUp, toolIcons } from "@/components/skapter/visuals";
 import { Dot, PageTitle, Panel, Pill, fmtTime } from "@/components/skapter/ui";
 
 export const Route = createFileRoute("/agent")({
   head: () => ({
     meta: [
       { title: "Agent · Skapter" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "description", content: "Chat with, configure and audit the Skapter operations agent." },
       { property: "og:title", content: "Agent · Skapter" },
       { property: "og:description", content: "Chat with, configure and audit the Skapter operations agent." },
@@ -23,9 +26,11 @@ export const Route = createFileRoute("/agent")({
 });
 
 function AgentPage() {
+  const health = useData(getDashboard, ["log"]);
   return (
     <div className="flex h-full flex-col">
-      <PageTitle>Agent</PageTitle>
+      <PageTitle sub={<Pill tone="green">Agent online</Pill>}>Agent</PageTitle>
+      <div className="mb-4 grid grid-cols-2 gap-3 border-y py-3"><div className="flex items-center gap-3"><div className="w-16"><Ring value={80}><Clock className="mx-auto size-4 text-primary" /></Ring></div><div><p className="text-xs text-muted-foreground">Avg response</p><p className="text-2xl"><CountUp value={health?.responseSeconds ?? 0} suffix="s" /></p></div></div><div className="flex items-center gap-3"><div className="w-16"><Ring value={health?.successRate ?? 0}><ShieldCheck className="mx-auto size-4 text-primary" /></Ring></div><div><p className="text-xs text-muted-foreground">Success rate</p><p className="text-2xl"><CountUp value={health?.successRate ?? 0} suffix="%" /></p></div></div></div>
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="w-fit">
           <TabsTrigger value="chat">Chat</TabsTrigger>
@@ -98,7 +103,7 @@ function ChatTab() {
       </div>
       <div className="flex flex-wrap gap-2">
         {examples.map((e) => (
-          <button key={e} className="pill hover:bg-accent" onClick={() => send(e)}>{e}</button>
+          <Button variant="outline" size="sm" key={e} className="pill h-auto hover:bg-accent" onClick={() => send(e)}>{e}</Button>
         ))}
       </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(text); }}>
@@ -116,7 +121,7 @@ function RulesTab() {
   const rules = useData(getRules, ["rules"]);
   const [draft, setDraft] = useState("");
   return (
-    <div className="grid h-full grid-cols-[1fr_1.5fr] gap-4">
+    <div className="grid h-full grid-cols-1 md:grid-cols-[1fr_1.5fr] gap-4">
       <Panel title="New rule">
         <Textarea rows={6} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Describe a rule in plain language…" />
         <Button className="mt-3" disabled={!draft.trim()} onClick={async () => { await saveRule(draft.trim()); setDraft(""); }}>
@@ -141,20 +146,7 @@ function LogTab() {
   const log = useData(getExecutionLog, ["log"]);
   return (
     <Panel className="h-full">
-      <div className="num divide-y text-xs">
-        <div className="grid grid-cols-[90px_160px_60px_1fr_140px] py-2 text-muted-foreground">
-          <span>time</span><span>action</span><span>status</span><span>detail</span><span>provider</span>
-        </div>
-        {log?.map((l) => (
-          <div key={l.id} className="grid grid-cols-[90px_160px_60px_1fr_140px] items-center py-2">
-            <span className="text-muted-foreground">{fmtTime(l.at)}</span>
-            <span>{l.action}</span>
-            <span className="flex items-center gap-1.5"><Dot tone={l.status === "ok" ? "green" : "red"} />{l.status}</span>
-            <span className="truncate">{l.detail}</span>
-            <span className="text-muted-foreground">{l.provider}</span>
-          </div>
-        ))}
-      </div>
+      <div className="ml-3 space-y-1">{log?.map(l => { const Icon = toolIcons[l.action] ?? Activity; return <div key={l.id} className="timeline-entry flex gap-4 border-l pb-5 pl-5"><span className="-ml-9 grid size-7 shrink-0 place-items-center rounded-full border bg-card text-primary"><Icon className="size-3.5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="num text-xs">{l.action}</span><Dot tone={l.status === "ok" ? "green" : "red"} /><Pill>{l.provider}</Pill><span className="num ml-auto text-[10px] text-muted-foreground">{fmtTime(l.at)}</span></div><p className="mt-2 text-xs text-muted-foreground">{l.detail}</p></div></div>; })}</div>
     </Panel>
   );
 }

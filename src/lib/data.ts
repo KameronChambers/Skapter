@@ -95,7 +95,7 @@ function iso(d: Date) {
 }
 
 function seed() {
-  const now = Date.now();
+  const now = Date.parse("2026-10-28T03:55:00Z");
   const conv = (
     id: string,
     name: string,
@@ -167,7 +167,7 @@ function seed() {
     m("c8", "customer", "Can I book another full detail next month?", 48),
     m("c8", "agent", "Absolutely, I'll send available dates.", 47.9),
   ];
-  const today = new Date();
+  const today = new Date(now);
   const d = (offset: number) => {
     const x = new Date(today);
     x.setDate(x.getDate() + offset);
@@ -195,7 +195,7 @@ function seed() {
     detail: string,
     provider: string,
     reason?: string,
-  ): LogEntry => ({ id: uid(), at: now - minsAgo * 60_000, action, status, detail, provider, reason });
+  ): LogEntry => ({ id: uid(), at: now - minsAgo * 60_000, action, status, detail, provider: provider === "fallback" ? "muse-spark-1.3" : "muse-spark-open", ...(reason ? { reason } : {}) });
   const log: LogEntry[] = [
     l(3, "reserve_stock", "ok", "1x Full Detail Thu 10am", "gemini-flash"),
     l(4, "reply_customer", "ok", "Lucía Morales (ES)", "gemini-flash"),
@@ -224,9 +224,10 @@ function emit(...tables: Table[]) {
 }
 
 export function subscribe(table: Table, callback: () => void): () => void {
-  if (!listeners.has(table)) listeners.set(table, new Set());
-  listeners.get(table)!.add(callback);
-  return () => listeners.get(table)!.delete(callback);
+  const callbacks = listeners.get(table) ?? new Set<() => void>();
+  listeners.set(table, callbacks);
+  callbacks.add(callback);
+  return () => { callbacks.delete(callback); };
 }
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -316,7 +317,7 @@ export async function unflagConversation(conversationId: string) {
   const c = store.conversations.find((x) => x.id === conversationId);
   if (c) {
     c.flagged = false;
-    c.flagNote = undefined;
+    delete c.flagNote;
   }
   emit("conversations");
 }
@@ -390,4 +391,41 @@ export async function getInventory(): Promise<InventoryItem[]> {
 export async function resetDemo() {
   store = seed();
   emit("conversations", "messages", "inventory", "bookings", "log", "rules", "tasks", "settings");
+}
+
+// ---------- Cockpit visuals (synthetic, no external calls) ----------
+export const DEMO_DATE = "2026-10-28";
+export const DEMO_MONTH = { year: 2026, month: 9, start: 4, days: 31, label: "October 2026" };
+export async function getDashboard() {
+  const inventory = await getInventory();
+  const bookings = await getBookings();
+  return {
+    responseSeconds: 24,
+    revenueHeld: 756,
+    lowItems: inventory.filter(i => stockPercent(i) < 50).length,
+    bookingsToday: bookings.filter(b => b.date === DEMO_DATE).length,
+    successRate: 96,
+    revenue: [120, 180, 140, 240, 200, 310, 280, 380, 290, 430, 360, 480, 410, 530].map((amount, i) => ({ day: i * 2 + 1, amount })),
+    trends: [[2, 1, 3, 2, 4, 3, 2], [42, 38, 40, 30, 32, 27, 24], [220, 310, 290, 430, 520, 620, 756], [5, 4, 4, 3, 3, 2, 2]],
+  };
+}
+
+export async function runDemoBooking() {
+  const booking = { title: "Lucía Morales · Full Detail", date: DEMO_DATE, time: "14:00" };
+  await addBooking(booking);
+  store.log.unshift({ id: uid(), at: Date.now(), action: "create_booking", status: "ok", detail: booking.title, provider: "muse-spark-open" });
+  emit("log");
+  return booking;
+}
+
+export type VehicleSize = "Small" | "Medium" | "Large";
+export async function getRecipes() {
+  return [
+    { service: "Full Detail", ingredients: [{ id: "i1", amount: 1 }, { id: "i2", amount: 4 }, { id: "i4", amount: 2 }, { id: "i6", amount: 2 }] },
+    { service: "Exterior Wash", ingredients: [{ id: "i2", amount: 2 }, { id: "i5", amount: 1 }] },
+    { service: "Ceramic Coat", ingredients: [{ id: "i1", amount: 1 }, { id: "i2", amount: 3 }, { id: "i3", amount: 2 }] },
+  ];
+}
+export function recipeAmount(amount: number, size: VehicleSize) {
+  return Math.ceil(amount * (size === "Small" ? 0.75 : size === "Large" ? 1.5 : 1));
 }
