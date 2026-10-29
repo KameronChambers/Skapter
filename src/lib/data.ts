@@ -4,15 +4,16 @@
  * store seeded with synthetic data; swap this file for a database version later.
  */
 
-export type Channel = "WhatsApp" | "Instagram" | "Simulated";
-export type Category = "Spam" | "Inquiry" | "Customer";
+export type Channel = "WhatsApp" | "Instagram" | "Messenger" | "Simulated";
+export type Tag = "Spam" | "Inquiry" | "Customer" | "Returning" | "Booked";
+export const TAGS: Tag[] = ["Customer", "Inquiry", "Returning", "Booked", "Spam"];
 export type Sender = "customer" | "agent" | "owner";
 
 export interface Conversation {
   id: string;
   name: string;
   channel: Channel;
-  category: Category;
+  tags: Tag[];
   unread: boolean;
   unreadAgent: boolean;
   flagged: boolean;
@@ -32,9 +33,12 @@ export interface Message {
 export interface InventoryItem {
   id: string;
   name: string;
-  price: number;
-  stock: number;
-  capacity: number;
+  unit: string;
+  packSize: number;
+  packLabel: string;
+  price: number; // per pack
+  stock: number; // in units
+  capacity: number; // in units
 }
 export type JobService = "Full Detail" | "Interior" | "Exterior Wash" | "Supply run" | "Ceramic Coat" | "Other";
 export interface Booking {
@@ -81,6 +85,7 @@ export interface Performance {
   report: string;
   mostPurchased: string;
   leastPurchased: string;
+  nextLevel: string;
 }
 
 export type Table =
@@ -106,14 +111,14 @@ function seed() {
     id: string,
     name: string,
     channel: Channel,
-    category: Category,
+    tags: Tag[],
     hoursAgo: number,
     extra: Partial<Conversation> = {},
   ): Conversation => ({
     id,
     name,
     channel,
-    category,
+    tags,
     unread: false,
     unreadAgent: false,
     flagged: false,
@@ -123,28 +128,28 @@ function seed() {
     ...extra,
   });
   const conversations: Conversation[] = [
-    conv("c1", "Mark Vance", "WhatsApp", "Customer", 22, {
+    conv("c1", "Mark Vance", "WhatsApp", ["Returning"], 22, {
       unread: true,
       flagged: true,
       flagNote: "Asked for a human",
       address: "1420 Woodward Ave, Detroit 48226",
       purchases: [{ service: "Full Detail", price: 189, date: "2026-08-14" }],
     }),
-    conv("c2", "Lucía Morales", "WhatsApp", "Inquiry", 1.2, { unread: true, unreadAgent: true }),
-    conv("c3", "Detroit Deals Promo", "Instagram", "Spam", 3),
-    conv("c4", "Roy Henderson", "Instagram", "Customer", 5, {
+    conv("c2", "Lucía Morales", "WhatsApp", ["Inquiry", "Booked"], 1.2, { unread: true, unreadAgent: true }),
+    conv("c3", "Detroit Deals Promo", "Instagram", ["Spam"], 3),
+    conv("c4", "Roy Henderson", "Instagram", ["Returning", "Booked"], 5, {
       address: "88 Lakeshore Dr, Detroit 48236",
       purchases: [
         { service: "Interior Detail", price: 129, date: "2026-06-02" },
         { service: "Ceramic Coat", price: 349, date: "2026-09-20" },
       ],
     }),
-    conv("c5", "Tasha Greene", "WhatsApp", "Inquiry", 8, { unreadAgent: true }),
-    conv("c6", "Devon Price", "Instagram", "Customer", 26, {
+    conv("c5", "Tasha Greene", "Messenger", ["Inquiry"], 8, { unreadAgent: true }),
+    conv("c6", "Devon Price", "Messenger", ["Returning"], 26, {
       purchases: [{ service: "Exterior Wash", price: 59, date: "2026-10-01" }],
     }),
-    conv("c7", "Amir Haddad", "Simulated", "Inquiry", 30),
-    conv("c8", "Kelly O'Brien", "WhatsApp", "Customer", 48, {
+    conv("c7", "Amir Haddad", "WhatsApp", ["Inquiry"], 30),
+    conv("c8", "Kelly O'Brien", "Instagram", ["Returning", "Inquiry"], 48, {
       address: "300 Grand River, Detroit 48201",
       purchases: [{ service: "Full Detail", price: 189, date: "2026-07-11" }],
     }),
@@ -186,14 +191,25 @@ function seed() {
     { id: uid(), title: "Supply run", date: d(0), time: "16:00", lat: 42.362, lng: -83.086, service: "Supply run" },
     { id: uid(), title: "Devon Price · Exterior Wash", date: d(-3), time: "09:00", lat: 42.351, lng: -83.071, service: "Exterior Wash" },
   ];
+  const it = (id: string, name: string, unit: string, packSize: number, packLabel: string, price: number, packs: number, capPacks: number): InventoryItem =>
+    ({ id, name, unit, packSize, packLabel, price, stock: Math.round(packs * packSize * 10) / 10, capacity: capPacks * packSize });
   const inventory: InventoryItem[] = [
-    { id: "i1", name: "Clay bar", price: 14.99, stock: 2, capacity: 20 },
-    { id: "i2", name: "Microfiber towels", price: 24.5, stock: 44, capacity: 50 },
-    { id: "i3", name: "Ceramic spray", price: 39.0, stock: 13, capacity: 20 },
-    { id: "i4", name: "Carpet shampoo", price: 18.75, stock: 11, capacity: 20 },
-    { id: "i5", name: "Wheel cleaner", price: 16.25, stock: 7, capacity: 20 },
-    { id: "i6", name: "Interior detailer", price: 12.99, stock: 17, capacity: 20 },
+    it("water", "Water", "gal", 100, "100 gal per unit", 0, 1.6, 2),
+    it("soap", "Regular soap", "oz", 32, "32 oz per bottle", 9.99, 3, 4),
+    it("psoap", "Premium soap", "oz", 32, "32 oz per bottle", 19.99, 1.5, 4),
+    it("gloves", "Gloves", "pcs", 100, "100 per box", 12.99, 1.4, 2),
+    it("towels", "Towels", "pcs", 200, "200 per pack", 34.99, 1.8, 2),
+    it("glass", "Glass cleaner", "oz", 32, "32 oz per bottle", 7.99, 2, 3),
+    it("wax", "Wax spray", "oz", 16, "16 oz per bottle", 14.99, 1, 3),
+    it("clay", "Clay bar", "bars", 6, "6 per box", 24.99, 0.5, 2),
+    it("int", "Interior spray", "oz", 18, "18 oz per bottle", 9.49, 2, 3),
+    it("pint", "Premium interior spray", "oz", 16, "16 oz per bottle", 17.99, 1, 3),
+    it("carpet", "Carpet cleaner", "oz", 32, "32 oz per bottle", 12.49, 1.5, 3),
+    it("compound", "Paint compound (Step 1)", "oz", 36, "36 oz per bottle", 39.99, 1, 2),
+    it("polish", "Polish (Step 2)", "oz", 36, "36 oz per bottle", 39.99, 0.8, 2),
+    it("headlight", "Headlight kit", "kits", 3, "3 per box", 29.99, 1, 2),
   ];
+  const shopping: { id: string; reason: string }[] = [];
   const l = (
     minsAgo: number,
     action: string,
@@ -220,7 +236,7 @@ function seed() {
     { id: "t3", text: "Complete detail for Roy Henderson, Detroit 48236", done: false },
   ];
   const settings: Settings = { businessName: "SudBudd MD", modelStatus: "live", base: { lat: 42.348, lng: -83.058 }, serviceRadiusMiles: 12 };
-  return { conversations, messages, bookings, inventory, log, rules, tasks, settings };
+  return { conversations, messages, bookings, inventory, shopping, log, rules, tasks, settings };
 }
 
 let store = seed();
@@ -255,6 +271,7 @@ export async function getPerformance(): Promise<Performance> {
       "Response time improved 18% week over week. The agent closed 6 bookings autonomously and escalated 1 conversation. Ceramic upsells are trending up; clay bar usage outpaced restocks.",
     mostPurchased: "Full Detail",
     leastPurchased: "Headlight Restoration",
+    nextLevel: "Answer flagged chats within 1 hr and auto-confirm deposits to reach 10/10.",
   };
 }
 export function performanceLabel(score: number): string {
@@ -312,10 +329,22 @@ export async function getJobMapData() {
 }
 
 // ---------- Inbox ----------
+/** Everyone who isn't spam is a customer. */
+export function normalizeTags(tags: Tag[]): Tag[] {
+  if (tags.includes("Spam")) return ["Spam"];
+  return TAGS.filter((t) => t === "Customer" || tags.includes(t));
+}
+export type InboxFilter = Tag | "Flagged" | "Unread" | "Unread agent responses";
+export const INBOX_FILTERS: InboxFilter[] = [...TAGS, "Flagged", "Unread", "Unread agent responses"];
+/** A conversation must match every selected filter. */
+export function matchesFilters(c: Pick<Conversation, "tags" | "flagged" | "unread" | "unreadAgent">, filters: InboxFilter[]): boolean {
+  const tags = normalizeTags(c.tags);
+  return filters.every((f) => f === "Flagged" ? c.flagged : f === "Unread" ? c.unread : f === "Unread agent responses" ? c.unreadAgent : tags.includes(f));
+}
 export async function getConversations(): Promise<(Conversation & { preview: string })[]> {
   return store.conversations.map((c) => {
     const last = [...store.messages].filter((m) => m.conversationId === c.id).sort((a, b) => b.at - a.at)[0];
-    return { ...clone(c), preview: last?.text ?? "" };
+    return { ...clone(c), tags: normalizeTags(c.tags), preview: last?.text ?? "" };
   });
 }
 export async function getMessages(conversationId: string): Promise<Message[]> {
@@ -361,7 +390,7 @@ export async function sendSimulatedCustomerMessage(text: string): Promise<string
       id: "sim",
       name: "Simulated Customer",
       channel: "Simulated",
-      category: "Inquiry",
+      tags: ["Inquiry"],
       unread: true,
       unreadAgent: false,
       flagged: false,
@@ -388,6 +417,10 @@ export async function getRules(): Promise<Rule[]> {
 }
 export async function saveRule(text: string) {
   store.rules.unshift({ id: uid(), text, enabled: true });
+  emit("rules");
+}
+export async function deleteRule(id: string) {
+  store.rules = store.rules.filter((r) => r.id !== id);
   emit("rules");
 }
 export async function toggleRule(id: string) {
@@ -427,17 +460,28 @@ export async function resetDemo() {
 // ---------- Cockpit visuals (synthetic, no external calls) ----------
 export const DEMO_DATE = "2026-10-28";
 export const DEMO_MONTH = { year: 2026, month: 9, start: 4, days: 31, label: "October 2026" };
+export const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+/** Synthetic daily revenue for a 2026 month (0-11). Months after the demo date have no data. */
+export function getMonthRevenue(month: number): { day: number; amount: number }[] | null {
+  if (month > DEMO_MONTH.month) return null;
+  const days = new Date(2026, month + 1, 0).getDate();
+  const last = month === DEMO_MONTH.month ? 28 : days;
+  return Array.from({ length: last }, (_, i) => ({ day: i + 1, amount: Math.round(60 + month * 8 + ((i * 37 + month * 11) % 9) * 12) }));
+}
+export function getYearRevenue() {
+  return MONTHS.map((m, i) => { const d = getMonthRevenue(i); return { day: m.slice(0, 3), amount: d ? d.reduce((a, b) => a + b.amount, 0) : 0, hasData: !!d }; });
+}
 export async function getDashboard() {
   const inventory = await getInventory();
   const bookings = await getBookings();
   return {
-    responseSeconds: 24,
-    revenueHeld: 756,
+    responseBefore: "12 hrs",
+    responseSeconds: 8, // placeholder until the live agent reports real timings
+    unreadMessages: store.conversations.filter(c => c.unread).length,
     lowItems: inventory.filter(i => stockPercent(i) < 50).length,
     bookingsToday: bookings.filter(b => b.date === DEMO_DATE).length,
     successRate: 96,
-    revenue: [120, 180, 140, 240, 200, 310, 280, 380, 290, 430, 360, 480, 410, 530].map((amount, i) => ({ day: i * 2 + 1, amount })),
-    trends: [[2, 1, 3, 2, 4, 3, 2], [42, 38, 40, 30, 32, 27, 24], [220, 310, 290, 430, 520, 620, 756], [5, 4, 4, 3, 3, 2, 2]],
+    trends: [[2, 1, 3, 2, 4, 3, 2], [42, 38, 30, 22, 16, 11, 8], [6, 5, 7, 4, 5, 3, 2], [5, 4, 4, 3, 3, 2, 2]],
   };
 }
 
@@ -450,13 +494,50 @@ export async function runDemoBooking() {
 }
 
 export type VehicleSize = "Small" | "Medium" | "Large";
-export async function getRecipes() {
-  return [
-    { service: "Full Detail", ingredients: [{ id: "i1", amount: 1 }, { id: "i2", amount: 4 }, { id: "i4", amount: 2 }, { id: "i6", amount: 2 }] },
-    { service: "Exterior Wash", ingredients: [{ id: "i2", amount: 2 }, { id: "i5", amount: 1 }] },
-    { service: "Ceramic Coat", ingredients: [{ id: "i1", amount: 1 }, { id: "i2", amount: 3 }, { id: "i3", amount: 2 }] },
-  ];
+type Usage = Record<string, [number, number, number]>;
+const RECIPES: Record<string, Usage> = {
+  "Basic Exterior": { water: [3, 4, 6], soap: [4, 5, 7], gloves: [2, 2, 2], towels: [4, 6, 8], glass: [1, 1, 2] },
+  "Premium Exterior": { water: [3, 4, 6], psoap: [4, 5, 7], gloves: [2, 2, 2], towels: [4, 6, 8], glass: [1, 1, 2], wax: [2, 2, 3], clay: [0.5, 0.5, 1] },
+  "Basic Interior": { gloves: [2, 2, 2], towels: [6, 8, 10], glass: [1, 1, 2], int: [2, 2, 3] },
+  "Premium Interior": { water: [0.5, 0.5, 1], gloves: [2, 2, 2], towels: [6, 8, 10], glass: [1, 1, 2], pint: [2, 2, 3], carpet: [2, 2, 4] },
+  "Basic Detail": { water: [3, 4, 6], soap: [4, 5, 7], gloves: [2, 2, 2], towels: [10, 14, 18], glass: [1, 1, 2], int: [2, 2, 3] },
+  "Premium Detail": { water: [3.5, 4.5, 7], psoap: [4, 5, 7], gloves: [2, 2, 2], towels: [10, 14, 18], glass: [1, 1, 2], wax: [2, 2, 3], clay: [0.5, 0.5, 1], pint: [2, 2, 3], carpet: [2, 2, 4] },
+  "Standard Paint Correction": { water: [2, 3, 4], gloves: [2, 2, 2], wax: [2, 2, 3], clay: [0.5, 0.5, 1], compound: [3, 5, 8] },
+  "2-Step Paint Correction": { water: [2, 3, 4], gloves: [2, 2, 2], wax: [2, 2, 3], clay: [0.5, 0.5, 1], compound: [3, 5, 8], polish: [3, 5, 8] },
+  "Headlight Restoration": { headlight: [1, 1, 1] },
+};
+export const SERVICES = Object.keys(RECIPES);
+const sizeIndex = (s: VehicleSize) => (s === "Small" ? 0 : s === "Medium" ? 1 : 2);
+/** Per-job usage for a service and vehicle size: [{ id, amount }]. */
+export function recipeFor(service: string, size: VehicleSize): { id: string; amount: number }[] {
+  return Object.entries(RECIPES[service] ?? {}).map(([id, u]) => ({ id, amount: u[sizeIndex(size)] }));
 }
-export function recipeAmount(amount: number, size: VehicleSize) {
-  return Math.ceil(amount * (size === "Small" ? 0.75 : size === "Large" ? 1.5 : 1));
+export async function getRecipes() {
+  return SERVICES.map((service) => ({ service }));
+}
+/** Deducts a job's supplies. Anything short is left untouched, explained, and added to the shopping list. */
+export async function deductRecipe(service: string, size: VehicleSize) {
+  const usage = recipeFor(service, size);
+  const shortages: { id: string; name: string; need: number; have: number; unit: string }[] = [];
+  for (const u of usage) {
+    const item = store.inventory.find((i) => i.id === u.id)!;
+    if (item.stock < u.amount) shortages.push({ id: item.id, name: item.name, need: u.amount, have: item.stock, unit: item.unit });
+  }
+  if (shortages.length === 0) {
+    for (const u of usage) { const item = store.inventory.find((i) => i.id === u.id)!; item.stock = Math.round((item.stock - u.amount) * 100) / 100; }
+  }
+  for (const s of shortages) {
+    const reason = `${service} (${size}) needs ${s.need} ${s.unit} of ${s.name}, only ${s.have} left`;
+    if (!store.shopping.some((x) => x.id === s.id)) store.shopping.push({ id: s.id, reason });
+  }
+  const explanation = shortages.length ? `Can't fully stock this job: ${shortages.map((s) => `${s.name} is short (need ${s.need} ${s.unit}, have ${s.have})`).join("; ")}. Added to the shopping list.` : "";
+  emit("inventory");
+  return { ok: shortages.length === 0, usage, shortages, explanation };
+}
+export async function getShoppingList() {
+  const manual = store.shopping;
+  return store.inventory
+    .filter((i) => stockPercent(i) < 60 || manual.some((m) => m.id === i.id))
+    .map((i) => ({ ...clone(i), packs: Math.max(1, Math.ceil((i.capacity - i.stock) / i.packSize)), reason: manual.find((m) => m.id === i.id)?.reason }))
+    .sort((a, b) => stockPercent(a) - stockPercent(b));
 }

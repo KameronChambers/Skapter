@@ -10,7 +10,7 @@ const serviceClasses: Record<JobService, string> = {
 };
 const credit = <><a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a></>;
 
-export function JobMap() {
+export function JobMap({ height }: { height?: string } = {}) {
   const data = useData(getJobMapData, ["bookings", "settings"]);
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<LeafletMap | null>(null);
@@ -117,7 +117,7 @@ export function JobMap() {
   }, [data, ready, failure]);
 
   return <div className="job-map-wrap">
-    <div className="job-map-frame">
+    <div className="job-map-frame" style={height ? { height } : undefined}>
       {!failure && <div ref={container} className="job-map" aria-label="Detroit job locations" />}
       {(!ready || failure) && <div className={failure ? "job-map-fallback" : "job-map-loading"}>{data && <FallbackMap data={data} />}</div>}
       {failure && <span className="job-map-status" role="status">{failure}</span>}
