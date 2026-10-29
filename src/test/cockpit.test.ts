@@ -35,7 +35,7 @@ describe("cockpit demo contract", () => {
     expect(r.ok).toBe(true);
     const after = Object.fromEntries((await getInventory()).map(i => [i.id, i.stock]));
     const expected = { water: 7, psoap: 7, gloves: 2, towels: 18, glass: 2, wax: 3, clay: 1, pint: 3, carpet: 4 };
-    for (const [id, n] of Object.entries(expected)) expect(before[id] - after[id]).toBeCloseTo(n);
+    for (const [id, n] of Object.entries(expected)) expect((before[id] ?? 0) - (after[id] ?? 0)).toBeCloseTo(n);
     expect(Object.keys(expected).sort()).toEqual(r.usage.map(u => u.id).sort());
   });
   it("clay shortage is explained and added to the shopping list", async () => {
@@ -54,7 +54,7 @@ describe("cockpit demo contract", () => {
     expect(convs.filter(c => matchesFilters(c, ["Spam", "Customer"]))).toHaveLength(0);
   });
   it("rules can be deleted", async () => {
-    const [first] = await getRules();
+    const first = (await getRules())[0]!;
     await deleteRule(first.id);
     expect((await getRules()).some(r => r.id === first.id)).toBe(false);
   });
