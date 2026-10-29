@@ -15,3 +15,4 @@
 - Use a keyed shared page error boundary plus route error components for actual error messages and stacks; reset the shared boundary on navigation.
 - Keep initial time-dependent UI deterministic and update current-time highlights only after mount to prevent hydration mismatches.
 - Initialize npm Leaflet and its OpenFreeMap MapLibre layer through dynamic imports inside the map effect; keep location/service-area calculations in data.ts and preserve an SVG fallback for tile or initialization failures, because SSR cannot evaluate browser-only map modules.
+- Map filters, chronological schedule and radius mutations belong in data.ts; update existing map circles via settings subscriptions so compact and expanded maps share the same service area without reinitializing tiles.

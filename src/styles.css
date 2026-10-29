@@ -197,6 +197,14 @@
 .job-map-status { position: absolute; bottom: 4px; left: 5px; color: var(--muted-foreground); font-size: 9px; }
 .job-map .leaflet-control-zoom a { width: 22px; height: 22px; line-height: 22px; background: var(--card); color: var(--foreground); border-color: var(--border); }
 .job-map .leaflet-tooltip { background: var(--popover); color: var(--popover-foreground); border-color: var(--border); font-family: var(--font-sans); }
+.job-map-schedule-layout { display: grid; gap: 16px; margin-top: 12px; }
+.job-map-expanded .job-map-frame { height: 260px; }
+.job-schedule-list { max-height: 260px; overflow-y: auto; }
+@media (min-width: 640px) {
+  .job-map-schedule-layout { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+  .job-map-expanded .job-map-frame { height: min(48dvh, 480px); }
+  .job-schedule-list { max-height: min(45dvh, 445px); }
+}
 @keyframes job-drop { from { opacity: 0; transform: translateY(-22px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes job-pulse { 50% { box-shadow: 0 0 0 7px color-mix(in oklab, currentColor 5%, transparent); } }
 @keyframes pulse-live { 50% { opacity: .45; box-shadow: 0 0 8px var(--primary); } }
