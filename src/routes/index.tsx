@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({ head: () => ({ meta: [
 ] }), component: HomePage });
 
 function HomePage() {
-  const dashboard = useData(getDashboard, ["bookings", "inventory"]);
+  const dashboard = useData(getDashboard, ["bookings", "inventory", "conversations"]);
   const perf = useData(getPerformance, []);
   const urgent = useData(getUrgentActions, []);
   const tasks = useData(getTasks, ["tasks"]);
