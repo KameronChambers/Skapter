@@ -46,7 +46,7 @@ function WhatsAppIcon({ className }: { className?: string }) {
 function MessengerIcon({ className }: { className?: string }) {
   return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 3C7 3 3 6.7 3 11.3c0 2.6 1.3 4.9 3.3 6.4V21l3-1.7c.9.3 1.8.4 2.7.4 5 0 9-3.7 9-8.4S17 3 12 3z" /><path d="M7.5 13.5l3-3 2.5 2 3.5-3.5-3 3-2.5-2z" /></svg>;
 }
-export function ChannelIcon({ channel, className = "size-3" }: { channel: Channel | string; className?: string }) {
+function ChannelIcon({ channel, className = "size-3" }: { channel: Channel | string; className?: string }) {
   if (channel === "Instagram") return <Instagram className={className} />;
   if (channel === "WhatsApp") return <WhatsAppIcon className={className} />;
   if (channel === "Messenger") return <MessengerIcon className={className} />;

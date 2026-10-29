@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getBookings, getConversations, getExecutionLog, getMessages, recipeAmount, resetDemo, runDemoBooking, sendSimulatedCustomerMessage, subscribe } from "@/lib/data";
+import { getBookings, getConversations, getExecutionLog, getMessages, resetDemo, deductRecipe, getInventory, getShoppingList, matchesFilters, getRules, deleteRule, getMonthRevenue, runDemoBooking, sendSimulatedCustomerMessage, subscribe } from "@/lib/data";
 describe("cockpit demo contract", () => {
   beforeEach(async () => { await resetDemo(); });
   it("loads eight conversations with their messages", async () => {
@@ -29,9 +29,37 @@ describe("cockpit demo contract", () => {
     const id = await sendSimulatedCustomerMessage("Thursday detail please");
     expect((await getMessages(id))[0]?.text).toBe("Thursday detail please");
   });
-  it("vehicle previews scale quantities without mutating stock", () => {
-    expect(recipeAmount(4, "Small")).toBe(3);
-    expect(recipeAmount(4, "Medium")).toBe(4);
-    expect(recipeAmount(4, "Large")).toBe(6);
+  it("Tahoe Premium Detail Large deducts the listed amounts", async () => {
+    const before = Object.fromEntries((await getInventory()).map(i => [i.id, i.stock]));
+    const r = await deductRecipe("Premium Detail", "Large");
+    expect(r.ok).toBe(true);
+    const after = Object.fromEntries((await getInventory()).map(i => [i.id, i.stock]));
+    const expected = { water: 7, psoap: 7, gloves: 2, towels: 18, glass: 2, wax: 3, clay: 1, pint: 3, carpet: 4 };
+    for (const [id, n] of Object.entries(expected)) expect(before[id] - after[id]).toBeCloseTo(n);
+    expect(Object.keys(expected).sort()).toEqual(r.usage.map(u => u.id).sort());
+  });
+  it("clay shortage is explained and added to the shopping list", async () => {
+    for (let i = 0; i < 3; i++) expect((await deductRecipe("Premium Detail", "Large")).ok).toBe(true);
+    const r = await deductRecipe("Premium Detail", "Large");
+    expect(r.ok).toBe(false);
+    expect(r.explanation).toContain("Clay bar");
+    expect((await getShoppingList()).find(i => i.id === "clay")?.reason).toBeTruthy();
+  });
+  it("everyone not spam is a customer; filters combine", async () => {
+    const convs = await getConversations();
+    for (const c of convs) expect(c.tags.includes("Customer")).toBe(!c.tags.includes("Spam"));
+    const both = convs.filter(c => matchesFilters(c, ["Customer", "Inquiry"]));
+    expect(both.length).toBeGreaterThan(0);
+    for (const c of both) expect(c.tags).toEqual(expect.arrayContaining(["Customer", "Inquiry"]));
+    expect(convs.filter(c => matchesFilters(c, ["Spam", "Customer"]))).toHaveLength(0);
+  });
+  it("rules can be deleted", async () => {
+    const [first] = await getRules();
+    await deleteRule(first.id);
+    expect((await getRules()).some(r => r.id === first.id)).toBe(false);
+  });
+  it("future months have no revenue data", () => {
+    expect(getMonthRevenue(10)).toBeNull();
+    expect(getMonthRevenue(9)?.length).toBeGreaterThan(0);
   });
 });
