@@ -1,9 +1,21 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * Skapter data-access layer.
- * ALL app reads/writes go through this file. Currently backed by an in-memory
- * store seeded with synthetic data; swap this file for a database version later.
+ * Skapter data-access layer (Supabase version).
+ * ALL app reads/writes go through this file. Pages never talk to the database directly.
+ * Same exported names as the old in-memory version, so no page needs to change.
+ *
+ * Honesty notes (kept in code so they are not forgotten before submission):
+ *  - getPerformance() text and getYearRevenue()/getMonthRevenue() are still SAMPLE data.
+ *  - Dashboard response speed / success rate use real agent log rows once they exist,
+ *    and fall back to placeholders until then.
+ *  - Owner-triggered actions (Book job, Run demo booking) log provider "system", never a model name.
  */
+import { supabase } from "@/integrations/supabase/client";
 
+// The generated Database types don't know our tables, so use an untyped handle.
+const db: any = supabase;
+
+// ---------- Types (unchanged) ----------
 export type Channel = "WhatsApp" | "Instagram" | "Messenger" | "Simulated";
 export type Tag = "Spam" | "Inquiry" | "Customer" | "Returning" | "Booked";
 export const TAGS: Tag[] = ["Customer", "Inquiry", "Returning", "Booked", "Spam"];
@@ -37,7 +49,7 @@ export interface InventoryItem {
   packSize: number;
   packLabel: string;
   price: number; // per pack
-  stock: number; // in units
+  stock: number; // in units (available = on hand minus active holds)
   capacity: number; // in units
 }
 export type JobService = "Full Detail" | "Interior" | "Exterior Wash" | "Supply run" | "Ceramic Coat" | "Other";
@@ -107,178 +119,103 @@ export type Table =
 
 const HOUR = 3600_000;
 const uid = () => Math.random().toString(36).slice(2, 10);
+/** UTC date (YYYY-MM-DD). UTC keeps server and browser identical, which avoids hydration mismatches. */
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
-function iso(d: Date) {
-  return d.toISOString().slice(0, 10);
+// ---------- Database helpers ----------
+async function q<T = any>(p: PromiseLike<{ data: T; error: any }>, what: string): Promise<T> {
+  const { data, error } = await p;
+  if (error) throw new Error(`${what}: ${error.message ?? String(error)}`);
+  return data;
 }
 
-function seed() {
-  const now = Date.parse("2026-10-28T03:55:00Z");
-  const conv = (
-    id: string,
-    name: string,
-    channel: Channel,
-    tags: Tag[],
-    hoursAgo: number,
-    extra: Partial<Conversation> = {},
-  ): Conversation => ({
-    id,
-    name,
-    channel,
-    tags,
-    unread: false,
-    unreadAgent: false,
-    flagged: false,
-    lastAt: now - hoursAgo * HOUR,
-    preferredContact: channel,
-    purchases: [],
-    ...extra,
-  });
-  const conversations: Conversation[] = [
-    conv("c1", "Mark Vance", "WhatsApp", ["Returning"], 22, {
-      unread: true,
-      flagged: true,
-      flagNote: "Asked for a human",
-      address: "1420 Woodward Ave, Detroit 48226",
-      purchases: [{ service: "Full Detail", price: 189, date: "2026-08-14" }],
-    }),
-    conv("c2", "Lucía Morales", "WhatsApp", ["Inquiry", "Booked"], 1.2, { unread: true, unreadAgent: true }),
-    conv("c3", "Detroit Deals Promo", "Instagram", ["Spam"], 3),
-    conv("c4", "Roy Henderson", "Instagram", ["Returning", "Booked"], 5, {
-      address: "88 Lakeshore Dr, Detroit 48236",
-      purchases: [
-        { service: "Interior Detail", price: 129, date: "2026-06-02" },
-        { service: "Ceramic Coat", price: 349, date: "2026-09-20" },
-      ],
-    }),
-    conv("c5", "Tasha Greene", "Messenger", ["Inquiry"], 8, { unreadAgent: true }),
-    conv("c6", "Devon Price", "Messenger", ["Returning"], 26, {
-      purchases: [{ service: "Exterior Wash", price: 59, date: "2026-10-01" }],
-    }),
-    conv("c7", "Amir Haddad", "WhatsApp", ["Inquiry"], 30),
-    conv("c8", "Kelly O'Brien", "Instagram", ["Returning", "Inquiry"], 48, {
-      address: "300 Grand River, Detroit 48201",
-      purchases: [{ service: "Full Detail", price: 189, date: "2026-07-11" }],
-    }),
-  ];
-  const m = (cid: string, sender: Sender, text: string, hoursAgo: number): Message => ({
-    id: uid(),
-    conversationId: cid,
-    sender,
-    text,
-    at: now - hoursAgo * HOUR,
-  });
-  const messages: Message[] = [
-    m("c1", "customer", "Hey, my last detail left streaks on the windshield.", 22.3),
-    m("c1", "agent", "Sorry about that, Mark! I can schedule a free touch-up.", 22.2),
-    m("c1", "customer", "I'd rather talk to a human please.", 22),
-    m("c2", "customer", "Hola, ¿pueden hacer un detallado completo el jueves en el 48236?", 1.3),
-    m("c2", "agent", "¡Hola Lucía! Sí, tenemos disponible el jueves a las 10am. ¿Lo reservo?", 1.2),
-    m("c3", "customer", "🔥 GET 10K FOLLOWERS TODAY 🔥 click link in bio", 3),
-    m("c4", "customer", "Confirming my detail for Thursday?", 5.2),
-    m("c4", "agent", "Confirmed: Full Detail Thu 10am at 48236.", 5.1),
-    m("c4", "owner", "Thanks Roy, see you then!", 5),
-    m("c5", "customer", "How much for a ceramic coating on an SUV?", 8.1),
-    m("c5", "agent", "Ceramic coating for SUVs starts at $399. Want a quote?", 8),
-    m("c6", "customer", "Great job on the wash last week!", 26),
-    m("c7", "customer", "Do you service Dearborn?", 30),
-    m("c8", "customer", "Can I book another full detail next month?", 48),
-    m("c8", "agent", "Absolutely, I'll send available dates.", 47.9),
-  ];
-  const today = new Date(now);
-  const d = (offset: number) => {
-    const x = new Date(today);
-    x.setDate(x.getDate() + offset);
-    return iso(x);
-  };
-  const bookings: Booking[] = [
-    { id: uid(), title: "Roy Henderson · Full Detail", date: d(0), time: "10:00", lat: 42.411, lng: -82.917, service: "Full Detail" },
-    { id: uid(), title: "Lucía Morales · Full Detail", date: d(2), time: "10:00", lat: 42.393, lng: -82.954, service: "Full Detail" },
-    { id: uid(), title: "Kelly O'Brien · Interior", date: d(5), time: "13:30", lat: 42.337, lng: -83.054, service: "Interior" },
-    { id: uid(), title: "Supply run", date: d(0), time: "16:00", lat: 42.362, lng: -83.086, service: "Supply run" },
-    { id: uid(), title: "Devon Price · Exterior Wash", date: d(-3), time: "09:00", lat: 42.351, lng: -83.071, service: "Exterior Wash" },
-  ];
-  const it = (id: string, name: string, unit: string, packSize: number, packLabel: string, price: number, packs: number, capPacks: number): InventoryItem =>
-    ({ id, name, unit, packSize, packLabel, price, stock: Math.round(packs * packSize * 10) / 10, capacity: capPacks * packSize });
-  const inventory: InventoryItem[] = [
-    it("water", "Water", "gal", 100, "100 gal per unit", 0, 1.6, 2),
-    it("soap", "Regular soap", "oz", 32, "32 oz per bottle", 9.99, 3, 4),
-    it("psoap", "Premium soap", "oz", 32, "32 oz per bottle", 19.99, 1.5, 4),
-    it("gloves", "Gloves", "pcs", 100, "100 per box", 12.99, 1.4, 2),
-    it("towels", "Towels", "pcs", 200, "200 per pack", 34.99, 1.8, 2),
-    it("glass", "Glass cleaner", "oz", 32, "32 oz per bottle", 7.99, 2, 3),
-    it("wax", "Wax spray", "oz", 16, "16 oz per bottle", 14.99, 1, 3),
-    it("clay", "Clay bar", "bars", 6, "6 per box", 24.99, 0.5, 2),
-    it("int", "Interior spray", "oz", 18, "18 oz per bottle", 9.49, 2, 3),
-    it("pint", "Premium interior spray", "oz", 16, "16 oz per bottle", 17.99, 1, 3),
-    it("carpet", "Carpet cleaner", "oz", 32, "32 oz per bottle", 12.49, 1.5, 3),
-    it("compound", "Paint compound (Step 1)", "oz", 36, "36 oz per bottle", 39.99, 1, 2),
-    it("polish", "Polish (Step 2)", "oz", 36, "36 oz per bottle", 39.99, 0.8, 2),
-    it("headlight", "Headlight kit", "kits", 3, "3 per box", 29.99, 1, 2),
-  ];
-  const shopping: { id: string; reason: string }[] = [];
-  const l = (
-    minsAgo: number,
-    action: string,
-    status: "ok" | "error",
-    detail: string,
-    provider: string,
-    reason?: string,
-  ): LogEntry => ({ id: uid(), at: now - minsAgo * 60_000, action, status, detail, provider: provider === "fallback" ? "muse-spark-1.3" : "muse-spark-open", ...(reason ? { reason } : {}) });
-  const log: LogEntry[] = [
-    l(3, "reserve_stock", "ok", "1x Full Detail Thu 10am", "gemini-flash"),
-    l(4, "reply_customer", "ok", "Lucía Morales (ES)", "gemini-flash"),
-    l(18, "classify_message", "ok", "Detroit Deals Promo → Spam", "gemini-flash"),
-    l(42, "create_booking", "error", "Mark Vance touch-up", "fallback", "Customer requested a human; escalated"),
-    l(65, "send_quote", "ok", "Tasha Greene · Ceramic SUV $399", "gemini-flash"),
-    l(120, "update_inventory", "error", "Clay bar restock", "fallback", "Supplier API timeout"),
-  ];
-  const rules: Rule[] = [
-    { id: "r1", text: "If a customer asks for a human, alert me, flag the chat, and tell them I will respond shortly.", enabled: true },
-    { id: "r2", text: "Never give out discount codes; only the owner may.", enabled: true },
-  ];
-  const tasks: Task[] = [
-    { id: "t1", text: "Review AI agent responses from yesterday", done: true },
-    { id: "t2", text: "Go shopping for new supplies today @ 4:00pm", done: false },
-    { id: "t3", text: "Complete detail for Roy Henderson, Detroit 48236", done: false },
-  ];
-  const settings: Settings = { businessName: "SudBudd MD", modelStatus: "live", base: { lat: 42.348, lng: -83.058 }, serviceRadiusMiles: 12 };
-  return { conversations, messages, bookings, inventory, shopping, log, rules, tasks, settings };
+async function logAction(
+  tool: string,
+  summary: string,
+  status: "ok" | "error",
+  provider: "muse-spark-open" | "muse-spark-1.3" | "system" = "system",
+  reason?: string,
+  details?: unknown,
+) {
+  await q(
+    db.from("execution_log").insert({ tool, summary, status, provider, reason: reason ?? null, details: details ?? null }),
+    "log action",
+  );
 }
 
-let store = seed();
-const listeners = new Map<Table, Set<() => void>>();
+// ---------- Live updates ----------
+// Each page table maps to one or more database tables.
+const TABLE_MAP: Record<Table, string[]> = {
+  conversations: ["conversations"],
+  messages: ["messages"],
+  inventory: ["inventory", "reservations"],
+  bookings: ["bookings"],
+  log: ["execution_log"],
+  rules: ["agent_rules"],
+  tasks: ["tasks"],
+  settings: ["settings"],
+};
+const localListeners = new Map<Table, Set<() => void>>();
 function emit(...tables: Table[]) {
-  tables.forEach((t) => listeners.get(t)?.forEach((cb) => cb()));
+  tables.forEach((t) => localListeners.get(t)?.forEach((cb) => cb()));
 }
 
+/** Calls back when the table changes: instantly for our own writes, via realtime for everyone else's (e.g. the agent). */
 export function subscribe(table: Table, callback: () => void): () => void {
-  const callbacks = listeners.get(table) ?? new Set<() => void>();
-  listeners.set(table, callbacks);
-  callbacks.add(callback);
-  return () => { callbacks.delete(callback); };
-}
+  const set = localListeners.get(table) ?? new Set<() => void>();
+  localListeners.set(table, set);
+  set.add(callback);
 
-const clone = <T>(v: T): T => structuredClone(v);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const debounced = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(callback, 120);
+  };
+  let channel: any;
+  try {
+    channel = db.channel(`skapter-${table}-${uid()}`);
+    for (const t of TABLE_MAP[table]) {
+      channel.on("postgres_changes", { event: "*", schema: "public", table: t }, debounced);
+    }
+    channel.subscribe();
+  } catch (e) {
+    console.warn("[skapter] realtime unavailable; live updates limited to this browser", e);
+  }
+  return () => {
+    set.delete(callback);
+    if (timer) clearTimeout(timer);
+    if (channel) db.removeChannel(channel);
+  };
+}
 
 // ---------- Settings ----------
 export async function getSettings(): Promise<Settings> {
-  return clone(store.settings);
+  const rows: { key: string; value: string }[] = await q(db.from("settings").select("key,value"), "settings");
+  const m: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return {
+    businessName: m.business_name ?? "SudBudd MD",
+    modelStatus: m.model_status === "fallback" ? "fallback" : "live",
+    base: { lat: Number(m.base_lat ?? 42.348), lng: Number(m.base_lng ?? -83.058) },
+    serviceRadiusMiles: Number(m.service_radius_miles ?? 12),
+  };
+}
+async function putSetting(key: string, value: string) {
+  await q(db.from("settings").upsert({ key, value }), `save setting ${key}`);
+  emit("settings");
 }
 export async function setModelStatus(status: Settings["modelStatus"]) {
-  store.settings.modelStatus = status;
-  emit("settings");
+  await putSetting("model_status", status);
 }
 export const SERVICE_RADIUS_RANGE = { min: 1, max: 50, step: 1 };
 export async function setServiceRadiusMiles(radius: number) {
   if (!Number.isFinite(radius) || radius < SERVICE_RADIUS_RANGE.min || radius > SERVICE_RADIUS_RANGE.max) {
     throw new Error("Service radius must be between 1 and 50 miles.");
   }
-  store.settings.serviceRadiusMiles = radius;
-  emit("settings");
+  await putSetting("service_radius_miles", String(radius));
 }
 
 // ---------- Home ----------
+/** SAMPLE text and score until weekly reports are generated by the agent. */
 export async function getPerformance(): Promise<Performance> {
   return {
     score: 8,
@@ -295,60 +232,133 @@ export function performanceLabel(score: number): string {
   if (score <= 7) return "Adequate";
   return "Exemplary";
 }
+/** Built from live data: flagged unread chats, critically low supplies, plus one standing reminder. */
 export async function getUrgentActions(): Promise<UrgentAction[]> {
-  return [
-    { id: "u1", text: "Respond to Mark Vance, waiting 22 hrs", level: "red" },
-    { id: "u2", text: "Clay bar stock critically low", level: "red" },
-    { id: "u3", text: "Agent reminder: update seasonal discount code", level: "amber" },
-  ];
+  const [convs, inv] = await Promise.all([getConversations(), getInventory()]);
+  const out: UrgentAction[] = [];
+  for (const c of convs.filter((x) => x.flagged && x.unread)) {
+    const hrs = Math.max(1, Math.round((Date.now() - c.lastAt) / HOUR));
+    out.push({ id: `wait-${c.id}`, text: `Respond to ${c.name}, waiting ${hrs} hrs`, level: "red" });
+  }
+  for (const i of inv.filter((x) => stockPercent(x) < 30)) {
+    out.push({ id: `stock-${i.id}`, text: `${i.name} stock critically low`, level: "red" });
+  }
+  out.push({ id: "u-discount", text: "Agent reminder: update seasonal discount code", level: "amber" });
+  return out;
 }
 export async function getTasks(): Promise<Task[]> {
-  return clone(store.tasks);
+  const rows: any[] = await q(
+    db.from("tasks").select("id,text,done").order("created_at", { ascending: true }).order("text", { ascending: true }),
+    "tasks",
+  );
+  return rows.map((r) => ({ id: r.id, text: r.text, done: !!r.done }));
 }
 export async function toggleTask(id: string) {
-  const t = store.tasks.find((x) => x.id === id);
-  if (t) t.done = !t.done;
+  const rows: any[] = await q(db.from("tasks").select("done").eq("id", id).limit(1), "task");
+  if (!rows[0]) return;
+  await q(db.from("tasks").update({ done: !rows[0].done }).eq("id", id), "toggle task");
   emit("tasks");
 }
-export async function getBookings(): Promise<Booking[]> {
-  return clone(store.bookings);
+
+type RawBooking = Booking & { createdAt: number };
+async function getBookingsRaw(): Promise<RawBooking[]> {
+  const [rows, settings] = await Promise.all([
+    q<any[]>(
+      db
+        .from("bookings")
+        .select("id,title,job_date,job_time,lat,lng,job_kind,created_at")
+        .not("job_date", "is", null)
+        .order("job_date", { ascending: true })
+        .order("job_time", { ascending: true }),
+      "bookings",
+    ),
+    getSettings(),
+  ]);
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title ?? "Booking",
+    date: r.job_date,
+    time: r.job_time ?? "09:00",
+    lat: r.lat ?? settings.base.lat,
+    lng: r.lng ?? settings.base.lng,
+    service: (JOB_SERVICES.includes(r.job_kind) ? r.job_kind : "Other") as JobService,
+    createdAt: Date.parse(r.created_at),
+  }));
 }
-export async function addBooking(b: Pick<Booking, "title" | "date" | "time"> & Partial<Pick<Booking, "lat" | "lng" | "service">>) {
-  // Calendar events without a job location occur at the seeded business base.
-  store.bookings.push({ ...store.settings.base, service: "Other", ...b, id: uid() });
+const toBooking = (r: RawBooking): Booking => ({
+  id: r.id,
+  title: r.title,
+  date: r.date,
+  time: r.time,
+  lat: r.lat,
+  lng: r.lng,
+  service: r.service,
+});
+export async function getBookings(): Promise<Booking[]> {
+  return (await getBookingsRaw()).map(toBooking);
+}
+export async function addBooking(
+  b: Pick<Booking, "title" | "date" | "time"> & Partial<Pick<Booking, "lat" | "lng" | "service">>,
+) {
+  // Calendar events without a job location occur at the business base.
+  const { base } = await getSettings();
+  await q(
+    db.from("bookings").insert({
+      title: b.title,
+      job_date: b.date,
+      job_time: b.time,
+      lat: b.lat ?? base.lat,
+      lng: b.lng ?? base.lng,
+      job_kind: b.service ?? "Other",
+      status: "confirmed",
+    }),
+    "add booking",
+  );
   emit("bookings");
 }
 
 /** Great-circle distance in statute miles. */
 export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const radians = (degrees: number) => degrees * Math.PI / 180;
-  const a = Math.sin(radians(lat2 - lat1) / 2) ** 2 + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(radians(lng2 - lng1) / 2) ** 2;
+  const radians = (degrees: number) => (degrees * Math.PI) / 180;
+  const a =
+    Math.sin(radians(lat2 - lat1) / 2) ** 2 +
+    Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(radians(lng2 - lng1) / 2) ** 2;
   return 3958.7613 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a))));
 }
 
 export async function getJobMapData(filters: JobMapFilters = {}) {
   const settings = await getSettings();
-  const bookings = await getBookings();
-  const allJobs = bookings.map(job => {
+  const raw = await getBookingsRaw();
+  const newestId = [...raw].sort((a, b) => b.createdAt - a.createdAt)[0]?.id;
+  const bookings = raw.map(toBooking);
+  const allJobs = bookings.map((job) => {
     const distance = distanceMiles(settings.base.lat, settings.base.lng, job.lat, job.lng);
     return { ...job, distanceMiles: distance, withinServiceArea: distance <= settings.serviceRadiusMiles };
   });
-  const jobs = allJobs.filter(job =>
-    (!filters.services || filters.services.includes(job.service)) &&
-    (!filters.from || job.date >= filters.from) && (!filters.to || job.date <= filters.to) &&
-    (filters.area !== "inside" || job.withinServiceArea) && (filters.area !== "outside" || !job.withinServiceArea)
+  const jobs = allJobs.filter(
+    (job) =>
+      (!filters.services || filters.services.includes(job.service)) &&
+      (!filters.from || job.date >= filters.from) &&
+      (!filters.to || job.date <= filters.to) &&
+      (filters.area !== "inside" || job.withinServiceArea) &&
+      (filters.area !== "outside" || !job.withinServiceArea),
   );
   const latRadius = settings.serviceRadiusMiles / 69;
-  const lngRadius = latRadius / Math.cos(settings.base.lat * Math.PI / 180);
+  const lngRadius = latRadius / Math.cos((settings.base.lat * Math.PI) / 180);
   return {
-    settings, jobs, schedule: [...jobs].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)),
-    newestId: bookings.at(-1)?.id,
-    counts: { inside: jobs.filter(job => job.withinServiceArea).length, outside: jobs.filter(job => !job.withinServiceArea).length },
+    settings,
+    jobs,
+    schedule: [...jobs].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)),
+    newestId,
+    counts: {
+      inside: jobs.filter((job) => job.withinServiceArea).length,
+      outside: jobs.filter((job) => !job.withinServiceArea).length,
+    },
     bounds: {
-      south: Math.min(settings.base.lat - latRadius, ...allJobs.map(j => j.lat)),
-      north: Math.max(settings.base.lat + latRadius, ...allJobs.map(j => j.lat)),
-      west: Math.min(settings.base.lng - lngRadius, ...allJobs.map(j => j.lng)),
-      east: Math.max(settings.base.lng + lngRadius, ...allJobs.map(j => j.lng)),
+      south: Math.min(settings.base.lat - latRadius, ...allJobs.map((j) => j.lat)),
+      north: Math.max(settings.base.lat + latRadius, ...allJobs.map((j) => j.lat)),
+      west: Math.min(settings.base.lng - lngRadius, ...allJobs.map((j) => j.lng)),
+      east: Math.max(settings.base.lng + lngRadius, ...allJobs.map((j) => j.lng)),
     },
   };
 }
@@ -362,99 +372,145 @@ export function normalizeTags(tags: Tag[]): Tag[] {
 export type InboxFilter = Tag | "Flagged" | "Unread" | "Unread agent responses";
 export const INBOX_FILTERS: InboxFilter[] = [...TAGS, "Flagged", "Unread", "Unread agent responses"];
 /** A conversation must match every selected filter. */
-export function matchesFilters(c: Pick<Conversation, "tags" | "flagged" | "unread" | "unreadAgent">, filters: InboxFilter[]): boolean {
+export function matchesFilters(
+  c: Pick<Conversation, "tags" | "flagged" | "unread" | "unreadAgent">,
+  filters: InboxFilter[],
+): boolean {
   const tags = normalizeTags(c.tags);
-  return filters.every((f) => f === "Flagged" ? c.flagged : f === "Unread" ? c.unread : f === "Unread agent responses" ? c.unreadAgent : tags.includes(f));
+  return filters.every((f) =>
+    f === "Flagged" ? c.flagged : f === "Unread" ? c.unread : f === "Unread agent responses" ? c.unreadAgent : tags.includes(f),
+  );
 }
+const CHANNEL_LABEL: Record<string, Channel> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  messenger: "Messenger",
+  simulated: "Simulated",
+};
 export async function getConversations(): Promise<(Conversation & { preview: string })[]> {
-  return store.conversations.map((c) => {
-    const last = [...store.messages].filter((m) => m.conversationId === c.id).sort((a, b) => b.at - a.at)[0];
-    return { ...clone(c), tags: normalizeTags(c.tags), preview: last?.text ?? "" };
+  const [rows, msgs] = await Promise.all([
+    q<any[]>(db.from("conversations").select("*").order("last_message_at", { ascending: false }), "conversations"),
+    q<any[]>(
+      db.from("messages").select("conversation_id,body,created_at").order("created_at", { ascending: false }).limit(300),
+      "previews",
+    ),
+  ]);
+  const preview = new Map<string, string>();
+  for (const m of msgs) if (!preview.has(m.conversation_id)) preview.set(m.conversation_id, m.body);
+  return rows.map((r) => {
+    const channel = CHANNEL_LABEL[r.channel] ?? "Simulated";
+    const rawTags: Tag[] = r.category === "spam" ? ["Spam"] : (r.tags ?? ["Inquiry"]);
+    return {
+      id: r.id,
+      name: r.name ?? "Unknown",
+      channel,
+      tags: normalizeTags(rawTags),
+      unread: !!r.unread,
+      unreadAgent: !!r.agent_unread,
+      flagged: !!r.flagged,
+      ...(r.flag_note ? { flagNote: r.flag_note } : {}),
+      lastAt: Date.parse(r.last_message_at),
+      ...(r.address ? { address: r.address } : {}),
+      preferredContact: r.preferred_contact ?? channel,
+      purchases: r.purchases ?? [],
+      preview: preview.get(r.id) ?? "",
+    };
   });
 }
 export async function getMessages(conversationId: string): Promise<Message[]> {
-  return clone(store.messages.filter((m) => m.conversationId === conversationId).sort((a, b) => a.at - b.at));
+  const rows: any[] = await q(
+    db.from("messages").select("id,conversation_id,sender,body,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }),
+    "messages",
+  );
+  return rows.map((r) => ({ id: r.id, conversationId: r.conversation_id, sender: r.sender, text: r.body, at: Date.parse(r.created_at) }));
 }
 export async function markRead(conversationId: string) {
-  const c = store.conversations.find((x) => x.id === conversationId);
-  if (c && (c.unread || c.unreadAgent)) {
-    c.unread = false;
-    c.unreadAgent = false;
-    emit("conversations");
-  }
+  await q(db.from("conversations").update({ unread: false, agent_unread: false }).eq("id", conversationId), "mark read");
+  emit("conversations");
 }
 export async function sendOwnerMessage(conversationId: string, text: string) {
-  const at = Date.now();
-  store.messages.push({ id: uid(), conversationId, sender: "owner", text, at });
-  const c = store.conversations.find((x) => x.id === conversationId);
-  if (c) c.lastAt = at;
+  await q(db.from("messages").insert({ conversation_id: conversationId, sender: "owner", body: text, processed: true }), "send message");
+  await q(db.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId), "update conversation");
   emit("messages", "conversations");
 }
 export async function flagConversation(conversationId: string, note: string) {
-  const c = store.conversations.find((x) => x.id === conversationId);
-  if (c) {
-    c.flagged = true;
-    c.flagNote = note;
-  }
+  await q(db.from("conversations").update({ flagged: true, flag_note: note }).eq("id", conversationId), "flag");
   emit("conversations");
 }
 export async function unflagConversation(conversationId: string) {
-  const c = store.conversations.find((x) => x.id === conversationId);
-  if (c) {
-    c.flagged = false;
-    delete c.flagNote;
-  }
+  await q(db.from("conversations").update({ flagged: false, flag_note: null }).eq("id", conversationId), "unflag");
   emit("conversations");
 }
-/** Sends a message as a simulated customer. Returns the conversation id. */
+/** Sends a message as a simulated customer. The agent picks it up exactly like a real DM. Returns the conversation id. */
 export async function sendSimulatedCustomerMessage(text: string): Promise<string> {
-  let c = store.conversations.find((x) => x.id === "sim");
-  const at = Date.now();
-  if (!c) {
-    c = {
-      id: "sim",
-      name: "Simulated Customer",
-      channel: "Simulated",
-      tags: ["Inquiry"],
-      unread: true,
-      unreadAgent: false,
-      flagged: false,
-      lastAt: at,
-      preferredContact: "Simulated",
-      purchases: [],
-    };
-    store.conversations.push(c);
+  const existing: any[] = await q(db.from("conversations").select("id").eq("channel", "simulated").limit(1), "simulator");
+  const now = new Date().toISOString();
+  let id: string | undefined = existing[0]?.id;
+  if (!id) {
+    const created: any[] = await q(
+      db
+        .from("conversations")
+        .insert({
+          name: "Simulated Customer",
+          channel: "simulated",
+          category: "inquiry",
+          tags: ["Inquiry"],
+          unread: true,
+          preferred_contact: "Simulated",
+          last_message_at: now,
+        })
+        .select("id"),
+      "simulator conversation",
+    );
+    id = created[0].id as string;
+  } else {
+    await q(db.from("conversations").update({ unread: true, last_message_at: now }).eq("id", id), "simulator conversation");
   }
-  c.unread = true;
-  c.lastAt = at;
-  store.messages.push({ id: uid(), conversationId: c.id, sender: "customer", text, at });
+  await q(db.from("messages").insert({ conversation_id: id, sender: "customer", body: text, processed: false }), "simulator message");
   emit("messages", "conversations");
-  return c.id;
+  return id as string;
 }
 
 // ---------- Agent ----------
-/** Placeholder: wire to a real model later. No AI calls are made today. */
+/** Placeholder: the chat box gets wired to the real agent function in a later step. */
 export async function askAgent(text: string): Promise<string> {
   return `[placeholder] The agent isn't connected yet. You asked: "${text}"`;
 }
 export async function getRules(): Promise<Rule[]> {
-  return clone(store.rules);
+  const rows: any[] = await q(
+    db.from("agent_rules").select("id,text,enabled").order("created_at", { ascending: false }).order("text", { ascending: true }),
+    "rules",
+  );
+  return rows.map((r) => ({ id: r.id, text: r.text, enabled: !!r.enabled }));
 }
 export async function saveRule(text: string) {
-  store.rules.unshift({ id: uid(), text, enabled: true });
+  await q(db.from("agent_rules").insert({ text, enabled: true }), "save rule");
   emit("rules");
 }
 export async function deleteRule(id: string) {
-  store.rules = store.rules.filter((r) => r.id !== id);
+  await q(db.from("agent_rules").delete().eq("id", id), "delete rule");
   emit("rules");
 }
 export async function toggleRule(id: string) {
-  const r = store.rules.find((x) => x.id === id);
-  if (r) r.enabled = !r.enabled;
+  const rows: any[] = await q(db.from("agent_rules").select("enabled").eq("id", id).limit(1), "rule");
+  if (!rows[0]) return;
+  await q(db.from("agent_rules").update({ enabled: !rows[0].enabled }).eq("id", id), "toggle rule");
   emit("rules");
 }
 export async function getExecutionLog(): Promise<LogEntry[]> {
-  return clone([...store.log].sort((a, b) => b.at - a.at));
+  const rows: any[] = await q(
+    db.from("execution_log").select("id,tool,summary,status,provider,reason,created_at").order("created_at", { ascending: false }).limit(200),
+    "execution log",
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    at: Date.parse(r.created_at),
+    action: r.tool,
+    status: r.status,
+    detail: r.summary,
+    provider: r.provider,
+    ...(r.reason ? { reason: r.reason } : {}),
+  }));
 }
 export async function getErrors(): Promise<LogEntry[]> {
   return (await getExecutionLog()).filter((l) => l.status === "error");
@@ -472,52 +528,111 @@ export function stockStatus(pct: number): StockStatus {
   if (pct >= 30) return "Low";
   return "Critical";
 }
+const ITEM_ORDER = ["water", "soap", "psoap", "gloves", "towels", "glass", "wax", "clay", "int", "pint", "carpet", "compound", "polish", "headlight"];
+const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Stock shown = on hand minus active (unexpired) holds, so gauges drop the moment the agent reserves supplies. */
 export async function getInventory(): Promise<InventoryItem[]> {
-  return clone(store.inventory);
+  const [items, holds] = await Promise.all([
+    q<any[]>(db.from("inventory").select("*"), "inventory"),
+    q<any[]>(
+      db.from("reservations").select("items").eq("status", "held").gt("expires_at", new Date().toISOString()),
+      "holds",
+    ),
+  ]);
+  const held: Record<string, number> = {};
+  for (const h of holds) for (const [k, v] of Object.entries(h.items ?? {})) held[k] = (held[k] ?? 0) + Number(v);
+  const rank = (k: string) => (ITEM_ORDER.includes(k) ? ITEM_ORDER.indexOf(k) : 99);
+  return items
+    .map((r) => {
+      const packSize = Number(r.pack_size);
+      const showUnit = r.unit === "oz" || r.unit === "gal";
+      return {
+        id: r.key,
+        name: r.label,
+        unit: r.unit,
+        packSize,
+        packLabel: `${packSize}${showUnit ? ` ${r.unit}` : ""} per ${r.pack_name}`,
+        price: Number(r.pack_price),
+        stock: round2(Number(r.on_hand) - (held[r.key] ?? 0)),
+        capacity: Number(r.par_packs) * packSize,
+      } as InventoryItem;
+    })
+    .sort((a, b) => rank(a.id) - rank(b.id));
 }
 
 // ---------- Demo ----------
-export async function resetDemo() {
-  store = seed();
-  emit("conversations", "messages", "inventory", "bookings", "log", "rules", "tasks", "settings");
-}
-
-// ---------- Cockpit visuals (synthetic, no external calls) ----------
-export const DEMO_DATE = "2026-10-28";
-export const DEMO_MONTH = { year: 2026, month: 9, start: 4, days: 31, label: "October 2026" };
+export const DEMO_DATE = todayIso();
+const _now = new Date();
+const _y = _now.getUTCFullYear();
+const _m = _now.getUTCMonth();
+/** Current month (UTC). */
+export const DEMO_MONTH = {
+  year: _y,
+  month: _m,
+  start: new Date(Date.UTC(_y, _m, 1)).getUTCDay(),
+  days: new Date(Date.UTC(_y, _m + 1, 0)).getUTCDate(),
+  label: new Date(Date.UTC(_y, _m, 1)).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+};
 export const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-/** Synthetic daily revenue for a 2026 month (0-11). Months after the demo date have no data. */
+
+/** SAMPLE data: synthetic daily revenue for a 2026 month (0-11). Months after the current one have no data. */
 export function getMonthRevenue(month: number): { day: number; amount: number }[] | null {
   if (month > DEMO_MONTH.month) return null;
   const days = new Date(2026, month + 1, 0).getDate();
-  const last = month === DEMO_MONTH.month ? 28 : days;
+  const last = month === DEMO_MONTH.month ? Number(DEMO_DATE.slice(8, 10)) : days;
   return Array.from({ length: last }, (_, i) => ({ day: i + 1, amount: Math.round(60 + month * 8 + ((i * 37 + month * 11) % 9) * 12) }));
 }
 export function getYearRevenue() {
-  return MONTHS.map((m, i) => { const d = getMonthRevenue(i); return { day: m.slice(0, 3), amount: d ? d.reduce((a, b) => a + b.amount, 0) : 0, hasData: !!d }; });
+  return MONTHS.map((m, i) => {
+    const d = getMonthRevenue(i);
+    return { day: m.slice(0, 3), amount: d ? d.reduce((a, b) => a + b.amount, 0) : 0, hasData: !!d };
+  });
 }
+
 export async function getDashboard() {
-  const inventory = await getInventory();
-  const bookings = await getBookings();
+  const [inventory, bookings, convs, metrics] = await Promise.all([
+    getInventory(),
+    getBookings(),
+    getConversations(),
+    q<any[]>(
+      db.from("execution_log").select("status,details").neq("provider", "system").order("created_at", { ascending: false }).limit(200),
+      "metrics",
+    ),
+  ]);
+  const latencies = metrics.map((r) => Number(r.details?.latency_ms)).filter((n) => Number.isFinite(n) && n > 0);
+  const responseSeconds = latencies.length
+    ? Math.round((latencies.reduce((a, b) => a + b, 0) / latencies.length / 1000) * 10) / 10
+    : 8; // placeholder until the agent has logged real timings
+  const successRate = metrics.length
+    ? Math.round((metrics.filter((r) => r.status === "ok").length / metrics.length) * 100)
+    : 96; // placeholder until the agent has logged real runs
   return {
     responseBefore: "12 hrs",
-    responseSeconds: 8, // placeholder until the live agent reports real timings
-    unreadMessages: store.conversations.filter(c => c.unread).length,
-    lowItems: inventory.filter(i => stockPercent(i) < 50).length,
-    bookingsToday: bookings.filter(b => b.date === DEMO_DATE).length,
-    successRate: 96,
+    responseSeconds,
+    unreadMessages: convs.filter((c) => c.unread).length,
+    lowItems: inventory.filter((i) => stockPercent(i) < 50).length,
+    bookingsToday: bookings.filter((b) => b.date === todayIso()).length,
+    successRate,
     trends: [[2, 1, 3, 2, 4, 3, 2], [42, 38, 30, 22, 16, 11, 8], [6, 5, 7, 4, 5, 3, 2], [5, 4, 4, 3, 3, 2, 2]],
   };
 }
 
+/** Owner-triggered demo button. Logged as "system" (not a model call). */
 export async function runDemoBooking() {
-  const booking = { title: "Lucía Morales · Full Detail", date: DEMO_DATE, time: "14:00", lat: 42.385, lng: -82.976, service: "Full Detail" as const };
+  const booking = { title: "Lucía Morales · Full Detail (demo)", date: todayIso(), time: "14:00", lat: 42.385, lng: -82.976, service: "Full Detail" as const };
   await addBooking(booking);
-  store.log.unshift({ id: uid(), at: Date.now(), action: "create_booking", status: "ok", detail: booking.title, provider: "muse-spark-open" });
+  await logAction("create_booking", `Demo booking: ${booking.title}`, "ok", "system");
   emit("log");
   return booking;
 }
 
+export async function resetDemo() {
+  await q(db.rpc("reset_demo"), "reset demo");
+  manualShopping.clear();
+  emit("conversations", "messages", "inventory", "bookings", "log", "rules", "tasks", "settings");
+}
+
+// ---------- Recipes (the database `services` table holds the same recipes for the reservation logic) ----------
 export type VehicleSize = "Small" | "Medium" | "Large";
 type Usage = Record<string, [number, number, number]>;
 const RECIPES: Record<string, Usage> = {
@@ -531,6 +646,18 @@ const RECIPES: Record<string, Usage> = {
   "2-Step Paint Correction": { water: [2, 3, 4], gloves: [2, 2, 2], wax: [2, 2, 3], clay: [0.5, 0.5, 1], compound: [3, 5, 8], polish: [3, 5, 8] },
   "Headlight Restoration": { headlight: [1, 1, 1] },
 };
+const SERVICE_IDS: Record<string, string> = {
+  "Basic Exterior": "basic_exterior",
+  "Premium Exterior": "premium_exterior",
+  "Basic Interior": "basic_interior",
+  "Premium Interior": "premium_interior",
+  "Basic Detail": "basic_detail",
+  "Premium Detail": "premium_detail",
+  "Standard Paint Correction": "standard_paint",
+  "2-Step Paint Correction": "two_step_paint",
+  "Headlight Restoration": "headlight",
+};
+const SIZE_LETTER: Record<VehicleSize, string> = { Small: "S", Medium: "M", Large: "L" };
 export const SERVICES = Object.keys(RECIPES);
 const sizeIndex = (s: VehicleSize) => (s === "Small" ? 0 : s === "Medium" ? 1 : 2);
 /** Per-job usage for a service and vehicle size: [{ id, amount }]. */
@@ -540,29 +667,56 @@ export function recipeFor(service: string, size: VehicleSize): { id: string; amo
 export async function getRecipes() {
   return SERVICES.map((service) => ({ service }));
 }
-/** Deducts a job's supplies. Anything short is left untouched, explained, and added to the shopping list. */
+
+/** Shortage reasons shown on the shopping list (this browser session only; the log keeps the permanent record). */
+const manualShopping = new Map<string, string>();
+
+/**
+ * Owner "Book job · deduct" button. Uses the same atomic database logic as the agent:
+ * reserve (locks stock, fails with the exact shortage), then confirm (permanent deduction).
+ */
 export async function deductRecipe(service: string, size: VehicleSize) {
   const usage = recipeFor(service, size);
-  const shortages: { id: string; name: string; need: number; have: number; unit: string }[] = [];
-  for (const u of usage) {
-    const item = store.inventory.find((i) => i.id === u.id)!;
-    if (item.stock < u.amount) shortages.push({ id: item.id, name: item.name, need: u.amount, have: item.stock, unit: item.unit });
+  const serviceId = SERVICE_IDS[service];
+  if (!serviceId) throw new Error(`Unknown service: ${service}`);
+
+  const res: any = await q(
+    db.rpc("reserve_booking", { p_conversation: null, p_service: serviceId, p_size: SIZE_LETTER[size] }),
+    "reserve_booking",
+  );
+
+  if (res?.ok && res.reservation_id) {
+    const confirmed: any = await q(db.rpc("confirm_reservation", { p_id: res.reservation_id }), "confirm_reservation");
+    if (!confirmed?.ok) throw new Error(`Could not confirm reservation: ${confirmed?.error ?? "unknown error"}`);
+    await logAction("reserve_stock", `${service} (${size}): supplies deducted`, "ok", "system");
+    emit("inventory", "log");
+    return { ok: true, usage, shortages: [] as { id: string; name: string; need: number; have: number; unit: string }[], explanation: "" };
   }
-  if (shortages.length === 0) {
-    for (const u of usage) { const item = store.inventory.find((i) => i.id === u.id)!; item.stock = Math.round((item.stock - u.amount) * 100) / 100; }
-  }
+
+  const inventory = await getInventory();
+  const shortages = ((res?.short ?? []) as { item: string; need: number; available: number }[]).map((s) => {
+    const item = inventory.find((i) => i.id === s.item);
+    return { id: s.item, name: item?.name ?? s.item, need: s.need, have: round2(s.available), unit: item?.unit ?? "" };
+  });
   for (const s of shortages) {
-    const reason = `${service} (${size}) needs ${s.need} ${s.unit} of ${s.name}, only ${s.have} left`;
-    if (!store.shopping.some((x) => x.id === s.id)) store.shopping.push({ id: s.id, reason });
+    manualShopping.set(s.id, `${service} (${size}) needs ${s.need} ${s.unit} of ${s.name}, only ${s.have} left`);
   }
-  const explanation = shortages.length ? `Can't fully stock this job: ${shortages.map((s) => `${s.name} is short (need ${s.need} ${s.unit}, have ${s.have})`).join("; ")}. Added to the shopping list.` : "";
-  emit("inventory");
-  return { ok: shortages.length === 0, usage, shortages, explanation };
+  const explanation = shortages.length
+    ? `Can't fully stock this job: ${shortages.map((s) => `${s.name} is short (need ${s.need} ${s.unit}, have ${s.have})`).join("; ")}. Added to the shopping list.`
+    : `Could not reserve supplies (${res?.error ?? "unknown error"}).`;
+  await logAction("reserve_stock", explanation, "error", "system", "Insufficient stock");
+  emit("inventory", "log");
+  return { ok: false, usage, shortages, explanation };
 }
+
 export async function getShoppingList() {
-  const manual = store.shopping;
-  return store.inventory
-    .filter((i) => stockPercent(i) < 60 || manual.some((m) => m.id === i.id))
-    .map((i) => ({ ...clone(i), packs: Math.max(1, Math.ceil((i.capacity - i.stock) / i.packSize)), reason: manual.find((m) => m.id === i.id)?.reason }))
+  const inventory = await getInventory();
+  return inventory
+    .filter((i) => stockPercent(i) < 60 || manualShopping.has(i.id))
+    .map((i) => ({
+      ...i,
+      packs: Math.max(1, Math.ceil((i.capacity - i.stock) / i.packSize)),
+      reason: manualShopping.get(i.id),
+    }))
     .sort((a, b) => stockPercent(a) - stockPercent(b));
 }
