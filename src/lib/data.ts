@@ -193,10 +193,10 @@ export async function getSettings(): Promise<Settings> {
   const rows: { key: string; value: string }[] = await q(db.from("settings").select("key,value"), "settings");
   const m: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   return {
-    businessName: m.business_name ?? "SudBudd MD",
-    modelStatus: m.model_status === "fallback" ? "fallback" : "live",
-    base: { lat: Number(m.base_lat ?? 42.348), lng: Number(m.base_lng ?? -83.058) },
-    serviceRadiusMiles: Number(m.service_radius_miles ?? 12),
+    businessName: m["business_name"] ?? "SudBudd MD",
+    modelStatus: m["model_status"] === "fallback" ? "fallback" : "live",
+    base: { lat: Number(m["base_lat"] ?? 42.348), lng: Number(m["base_lng"] ?? -83.058) },
+    serviceRadiusMiles: Number(m["service_radius_miles"] ?? 12),
   };
 }
 async function putSetting(key: string, value: string) {
