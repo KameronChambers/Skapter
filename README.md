@@ -1,4 +1,4 @@
-# Skapter OS
+# Skapter 
 
 > **Autonomous merchant operations and deterministic transaction engine for conversational social commerce.**  
 > Built for the **Meta Global AI Developer Hackathon × Cerebral Valley** | **Track:** Indie Developer | **Theme:** *Build for Your World*
