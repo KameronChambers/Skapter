@@ -41,6 +41,13 @@ export interface InventoryItem {
   capacity: number; // in units
 }
 export type JobService = "Full Detail" | "Interior" | "Exterior Wash" | "Supply run" | "Ceramic Coat" | "Other";
+export const JOB_SERVICES: JobService[] = ["Full Detail", "Interior", "Exterior Wash", "Supply run", "Ceramic Coat", "Other"];
+export interface JobMapFilters {
+  services?: JobService[];
+  from?: string;
+  to?: string;
+  area?: "all" | "inside" | "outside";
+}
 export interface Booking {
   id: string;
   title: string;
@@ -262,6 +269,14 @@ export async function setModelStatus(status: Settings["modelStatus"]) {
   store.settings.modelStatus = status;
   emit("settings");
 }
+export const SERVICE_RADIUS_RANGE = { min: 1, max: 50, step: 1 };
+export async function setServiceRadiusMiles(radius: number) {
+  if (!Number.isFinite(radius) || radius < SERVICE_RADIUS_RANGE.min || radius > SERVICE_RADIUS_RANGE.max) {
+    throw new Error("Service radius must be between 1 and 50 miles.");
+  }
+  store.settings.serviceRadiusMiles = radius;
+  emit("settings");
+}
 
 // ---------- Home ----------
 export async function getPerformance(): Promise<Performance> {
@@ -311,19 +326,29 @@ export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: nu
   return 3958.7613 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a))));
 }
 
-export async function getJobMapData() {
+export async function getJobMapData(filters: JobMapFilters = {}) {
   const settings = await getSettings();
   const bookings = await getBookings();
-  const jobs = bookings.map(job => ({ ...job, withinServiceArea: distanceMiles(settings.base.lat, settings.base.lng, job.lat, job.lng) <= settings.serviceRadiusMiles }));
+  const allJobs = bookings.map(job => {
+    const distance = distanceMiles(settings.base.lat, settings.base.lng, job.lat, job.lng);
+    return { ...job, distanceMiles: distance, withinServiceArea: distance <= settings.serviceRadiusMiles };
+  });
+  const jobs = allJobs.filter(job =>
+    (!filters.services || filters.services.includes(job.service)) &&
+    (!filters.from || job.date >= filters.from) && (!filters.to || job.date <= filters.to) &&
+    (filters.area !== "inside" || job.withinServiceArea) && (filters.area !== "outside" || !job.withinServiceArea)
+  );
   const latRadius = settings.serviceRadiusMiles / 69;
   const lngRadius = latRadius / Math.cos(settings.base.lat * Math.PI / 180);
   return {
-    settings, jobs, newestId: bookings.at(-1)?.id,
+    settings, jobs, schedule: [...jobs].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)),
+    newestId: bookings.at(-1)?.id,
+    counts: { inside: jobs.filter(job => job.withinServiceArea).length, outside: jobs.filter(job => !job.withinServiceArea).length },
     bounds: {
-      south: Math.min(settings.base.lat - latRadius, ...jobs.map(j => j.lat)),
-      north: Math.max(settings.base.lat + latRadius, ...jobs.map(j => j.lat)),
-      west: Math.min(settings.base.lng - lngRadius, ...jobs.map(j => j.lng)),
-      east: Math.max(settings.base.lng + lngRadius, ...jobs.map(j => j.lng)),
+      south: Math.min(settings.base.lat - latRadius, ...allJobs.map(j => j.lat)),
+      north: Math.max(settings.base.lat + latRadius, ...allJobs.map(j => j.lat)),
+      west: Math.min(settings.base.lng - lngRadius, ...allJobs.map(j => j.lng)),
+      east: Math.max(settings.base.lng + lngRadius, ...allJobs.map(j => j.lng)),
     },
   };
 }

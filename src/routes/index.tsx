@@ -57,7 +57,7 @@ function HomePage() {
       <Panel title="Tasks" action={<Pill>AI-drafted</Pill>}><ul className="divide-y">{tasks?.map(t => <li key={t.id} className="flex items-center gap-3 py-3 text-xs"><Checkbox id={t.id} checked={t.done} onCheckedChange={() => toggleTask(t.id)} /><label htmlFor={t.id} className={t.done ? "text-muted-foreground line-through" : ""}>{t.id === "t1" ? "Review agent responses" : t.id === "t2" ? "Supply run · 16:00" : "Roy Henderson · Detail"}</label></li>)}</ul></Panel>
     </div>
     <CalendarPanel />
-    <Dialog open={mapOpen} onOpenChange={setMapOpen}><DialogContent className="max-w-[95vw] sm:max-w-5xl"><DialogHeader><DialogTitle className="flex items-center gap-2"><MapPin className="size-4 text-primary" /> Detroit jobs</DialogTitle></DialogHeader>{mapOpen && <ClientOnly fallback={<div className="job-map-frame" />}><Suspense fallback={<div className="job-map-frame" />}><JobMap height="70vh" /></Suspense></ClientOnly>}</DialogContent></Dialog>
+    <Dialog open={mapOpen} onOpenChange={setMapOpen}><DialogContent className="max-h-[94dvh] max-w-[95vw] overflow-y-auto sm:max-w-5xl"><DialogHeader><DialogTitle className="flex items-center gap-2"><MapPin className="size-4 text-primary" /> Detroit job schedule</DialogTitle></DialogHeader>{mapOpen && <ClientOnly fallback={<div className="job-map-frame" />}><Suspense fallback={<div className="job-map-frame" />}><JobMap expanded /></Suspense></ClientOnly>}</DialogContent></Dialog>
   </div>;
 }
 function CalendarPanel() {
