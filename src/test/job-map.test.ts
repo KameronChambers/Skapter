@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addBooking, distanceMiles, getBookings, getJobMapData, getSettings, resetDemo, runDemoBooking } from "@/lib/data";
+import { addBooking, distanceMiles, getBookings, getJobMapData, getSettings, resetDemo, runDemoBooking, setServiceRadiusMiles, subscribe } from "@/lib/data";
 
 describe("job map data", () => {
   beforeEach(async () => { await resetDemo(); });
@@ -36,5 +36,38 @@ describe("job map data", () => {
     expect(data.newestId).toBe(data.jobs[5]?.id);
     expect(data.jobs[5]?.lat).toBe(42.385);
     expect(data.jobs[5]?.lng).toBe(-82.976);
+  });
+  it("filters services and actions for both pins and schedule", async () => {
+    const data = await getJobMapData({ services: ["Full Detail", "Supply run"] });
+    expect(data.jobs).toHaveLength(3);
+    expect(data.schedule.map(job => job.id).sort()).toEqual(data.jobs.map(job => job.id).sort());
+    expect((await getJobMapData({ services: [] })).jobs).toHaveLength(0);
+  });
+  it("filters an inclusive date range and orders schedule by date and time", async () => {
+    await addBooking({ title: "Early", date: "2026-11-01", time: "08:00" });
+    await addBooking({ title: "Late", date: "2026-11-01", time: "16:00" });
+    await addBooking({ title: "Next day", date: "2026-11-02", time: "10:00" });
+    const data = await getJobMapData({ from: "2026-11-01", to: "2026-11-01", services: ["Other"] });
+    expect(data.schedule.map(job => job.title)).toEqual(["Early", "Late"]);
+    expect(data.jobs).toHaveLength(2);
+  });
+  it("changing radius reclassifies jobs and notifies shared maps", async () => {
+    let updates = 0;
+    const unsubscribe = subscribe("settings", () => { updates++; });
+    await setServiceRadiusMiles(1);
+    expect((await getJobMapData({ area: "outside" })).jobs.some(job => job.title.startsWith("Roy Henderson"))).toBe(true);
+    await setServiceRadiusMiles(50);
+    const data = await getJobMapData({ area: "inside" });
+    expect(data.jobs).toHaveLength(5);
+    expect(data.counts).toEqual({ inside: 5, outside: 0 });
+    expect((await getSettings()).serviceRadiusMiles).toBe(50);
+    expect(updates).toBe(2);
+    unsubscribe();
+    await setServiceRadiusMiles(12);
+    expect(updates).toBe(2);
+  });
+  it("rejects invalid radii without changing the service area", async () => {
+    for (const radius of [0, 51, NaN]) await expect(setServiceRadiusMiles(radius)).rejects.toThrow();
+    expect((await getSettings()).serviceRadiusMiles).toBe(12);
   });
 });
