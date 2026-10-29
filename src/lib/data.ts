@@ -85,6 +85,7 @@ export interface Performance {
   report: string;
   mostPurchased: string;
   leastPurchased: string;
+  nextLevel: string;
 }
 
 export type Table =
@@ -270,6 +271,7 @@ export async function getPerformance(): Promise<Performance> {
       "Response time improved 18% week over week. The agent closed 6 bookings autonomously and escalated 1 conversation. Ceramic upsells are trending up; clay bar usage outpaced restocks.",
     mostPurchased: "Full Detail",
     leastPurchased: "Headlight Restoration",
+    nextLevel: "Answer flagged chats within 1 hr and auto-confirm deposits to reach 10/10.",
   };
 }
 export function performanceLabel(score: number): string {

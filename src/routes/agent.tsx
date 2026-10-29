@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Activity, Clock, Mic, MicOff, Send, ShieldCheck } from "lucide-react";
+import { Activity, Clock, Mic, MicOff, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useData } from "@/hooks/use-data";
-import { askAgent, getDashboard, getErrors, getExecutionLog, getRules, saveRule, toggleRule } from "@/lib/data";
+import { askAgent, deleteRule, getDashboard, getErrors, getExecutionLog, getRules, saveRule, toggleRule } from "@/lib/data";
 import { Ring, CountUp, toolIcons } from "@/components/skapter/visuals";
 import { Dot, PageTitle, Panel, Pill, fmtTime } from "@/components/skapter/ui";
 
@@ -133,7 +133,7 @@ function RulesTab() {
           {rules?.map((r) => (
             <li key={r.id} className="flex items-center justify-between gap-4 py-3 text-sm">
               <span className={r.enabled ? "" : "text-muted-foreground"}>{r.text}</span>
-              <Switch checked={r.enabled} onCheckedChange={() => toggleRule(r.id)} />
+              <span className="flex shrink-0 items-center gap-2"><Switch checked={r.enabled} onCheckedChange={() => toggleRule(r.id)} /><Button variant="ghost" size="icon" aria-label="Delete rule" onClick={() => { if (confirm("Delete this rule?")) deleteRule(r.id); }}><Trash2 className="size-4 text-muted-foreground" /></Button></span>
             </li>
           ))}
         </ul>
