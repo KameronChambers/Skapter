@@ -1,4 +1,4 @@
-- [ ] Add expanded map service/date filters, schedule and shared radius slider; verify map and area updates.
+- [x] Add expanded map service/date filters, schedule and shared radius slider; verify map and area updates.
 - [x] Apply shared cockpit styling and readable page error boundaries.
 - [x] Build Home stats, pipeline demo, activity, revenue, map and calendar.
 - [x] Upgrade Inbox visuals and verify all conversations and controls.
