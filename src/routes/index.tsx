@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useData } from "@/hooks/use-data";
-import { addBooking, DEMO_MONTH, getBookings, getDashboard, getMonthRevenue, getYearRevenue, MONTHS, getExecutionLog, getPerformance, getTasks, getUrgentActions, runDemoBooking, toggleTask } from "@/lib/data";
+import { addBooking, DEMO_MONTH, getBookings, getDashboard, getMonthRevenue, getYearRevenue, MONTHS, getExecutionLog, getPerformance, getTasks, getUrgentActions, runLiveAgentDemo, toggleTask } from "@/lib/data";
+import { toast } from "sonner";
 import { Dot, PageTitle, Panel, Pill, fmtTime } from "@/components/skapter/ui";
 import { CountUp, pipelineSteps, Ring, toolIcons } from "@/components/skapter/visuals";
 const JobMap = lazy(() => import("@/components/skapter/JobMap").then(m => ({ default: m.JobMap })));
@@ -28,6 +29,7 @@ function HomePage() {
   const log = useData(getExecutionLog, ["log"]) ?? [];
   const [step, setStep] = useState(-1);
   const [running, setRunning] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastLog = useRef<string | null>(null);
   const animate = () => {
