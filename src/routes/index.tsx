@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useData } from "@/hooks/use-data";
-import { addBooking, DEMO_MONTH, getBookings, getDashboard, getMonthRevenue, getYearRevenue, MONTHS, getExecutionLog, getPerformance, getTasks, getUrgentActions, runDemoBooking, toggleTask } from "@/lib/data";
+import { addBooking, DEMO_MONTH, getBookings, getDashboard, getMonthRevenue, getYearRevenue, MONTHS, getExecutionLog, getPerformance, getTasks, getUrgentActions, runLiveAgentDemo, toggleTask } from "@/lib/data";
+import { toast } from "sonner";
 import { Dot, PageTitle, Panel, Pill, fmtTime } from "@/components/skapter/ui";
 import { CountUp, pipelineSteps, Ring, toolIcons } from "@/components/skapter/visuals";
 const JobMap = lazy(() => import("@/components/skapter/JobMap").then(m => ({ default: m.JobMap })));
@@ -28,6 +29,7 @@ function HomePage() {
   const log = useData(getExecutionLog, ["log"]) ?? [];
   const [step, setStep] = useState(-1);
   const [running, setRunning] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastLog = useRef<string | null>(null);
   const animate = () => {
@@ -43,8 +45,8 @@ function HomePage() {
   return <div className="home-cockpit flex min-h-full flex-col gap-4">
     <PageTitle sub={<Pill tone="green">Live overview</Pill>}>SudBudd MD</PageTitle>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{stats.map((s, i) => <section key={s.label} className="panel stat-tile p-4"><div className="flex items-center justify-between text-xs text-muted-foreground"><span>{s.label}</span><s.icon className="size-4 text-primary" /></div><div className="mt-3 flex items-end justify-between gap-2">{s.before ? <div className="flex items-end gap-3"><div><p className="text-[10px] text-muted-foreground">Before</p><span className="num text-lg text-muted-foreground line-through">{s.before}</span></div><div><p className="text-[10px] text-primary">After</p><span className="text-3xl"><CountUp value={s.value} suffix={s.suffix} /></span></div></div> : <span className="text-3xl"><CountUp value={s.value} prefix={s.prefix} suffix={s.suffix} /></span>}<div className="h-10 w-24"><ResponsiveContainer><AreaChart data={(dashboard?.trends[i] ?? []).map(value => ({ value }))}><Area dataKey="value" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} strokeWidth={2} /></AreaChart></ResponsiveContainer></div></div></section>)}</div>
-    <Panel title={<span className="flex items-center gap-2"><Zap className="size-4 text-primary" /> Live pipeline</span>} action={<Button size="sm" disabled={running} onClick={async () => { setRunning(true); animate(); await runDemoBooking(); }}><Play className="size-3" /> Run demo booking</Button>}>
-      <div className="grid grid-cols-5 gap-1">{pipelineSteps.map((s, i) => <div key={s.label} className="relative text-center"><div className={"relative z-10 mx-auto grid size-10 place-items-center rounded-lg border transition-all " + (i <= step ? "border-primary/40 bg-primary/10 text-primary live-glow" : "bg-card text-muted-foreground")}><s.icon className="size-5" /></div>{i < 4 && <div className={"absolute top-5 left-[60%] h-px w-[80%] " + (i < step ? "bg-primary" : "bg-border")} />}<div className="mt-2 text-[11px] md:text-xs">{s.label}</div><div className="mt-1 h-7 text-[10px] text-primary">{step === i && <>Lucía Morales<br />Full Detail</>}</div></div>)}</div>
+    <Panel title={<span className="flex items-center gap-2"><Zap className="size-4 text-primary" /> Live pipeline</span>} action={<Button size="sm" disabled={running || waiting} onClick={async () => { setWaiting(true); try { await runLiveAgentDemo(); animate(); setRunning(true); } catch (e) { toast.error(e instanceof Error ? e.message : "Agent call failed"); } finally { setWaiting(false); } }}><Play className="size-3" /> {waiting ? "Agent working…" : "Run demo booking"}</Button>}>
+      <div className={"grid grid-cols-5 gap-1" + (waiting ? " animate-pulse" : "")}>{pipelineSteps.map((s, i) => <div key={s.label} className="relative text-center"><div className={"relative z-10 mx-auto grid size-10 place-items-center rounded-lg border transition-all " + (waiting || i <= step ? "border-primary/40 bg-primary/10 text-primary live-glow" : "bg-card text-muted-foreground")}><s.icon className="size-5" /></div>{i < 4 && <div className={"absolute top-5 left-[60%] h-px w-[80%] " + (i < step ? "bg-primary" : "bg-border")} />}<div className="mt-2 text-[11px] md:text-xs">{s.label}</div><div className="mt-1 h-7 text-[10px] text-primary">{step === i && <>Alex Rivera<br />Full Detail</>}</div></div>)}</div>
     </Panel>
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr]">
       <RevenuePanel />

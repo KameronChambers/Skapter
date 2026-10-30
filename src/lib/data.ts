@@ -626,6 +626,27 @@ export async function runDemoBooking() {
   return booking;
 }
 
+const DEMO_CUSTOMER = "Alex Rivera";
+const DEMO_BODY = "Can I get a full detail this Thursday at 10:00 in 48224 for a medium SUV? Also want a clean finish.";
+
+/** Live demo: ensures Alex Rivera's conversation exists, runs the `agent` edge function, then refreshes the cockpit. */
+export async function runLiveAgentDemo() {
+  const existing = await q<any[]>(db.from("conversations").select("id").eq("name", DEMO_CUSTOMER).limit(1), "find demo conversation");
+  let conversationId: string = existing?.[0]?.id;
+  if (!conversationId) {
+    const created = await q<any>(db.from("conversations").insert({ name: DEMO_CUSTOMER, channel: "simulated", category: "booking" }).select("id").single(), "create demo conversation");
+    conversationId = created.id;
+  }
+  const pending = await q<any[]>(db.from("messages").select("id").eq("conversation_id", conversationId).eq("processed", false).limit(1), "find pending message");
+  if (!pending?.length) await q(db.from("messages").insert({ conversation_id: conversationId, sender: "customer", body: DEMO_BODY, processed: false }).select("id"), "insert demo message");
+  try {
+    const { invokeAgent } = await import("@/services/agentApi");
+    return await invokeAgent(conversationId);
+  } finally {
+    emit("conversations", "messages", "log", "inventory", "bookings");
+  }
+}
+
 export async function resetDemo() {
   await q(db.rpc("reset_demo"), "reset demo");
   manualShopping.clear();
