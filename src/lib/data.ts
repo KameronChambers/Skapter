@@ -193,10 +193,10 @@ export async function getSettings(): Promise<Settings> {
   const rows: { key: string; value: string }[] = await q(db.from("settings").select("key,value"), "settings");
   const m: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   return {
-    businessName: m["business_name"] ?? "SudBudd MD",
-    modelStatus: m["model_status"] === "fallback" ? "fallback" : "live",
-    base: { lat: Number(m["base_lat"] ?? 42.348), lng: Number(m["base_lng"] ?? -83.058) },
-    serviceRadiusMiles: Number(m["service_radius_miles"] ?? 12),
+    businessName: m.business_name ?? "SudBudd MD",
+    modelStatus: m.model_status === "fallback" ? "fallback" : "live",
+    base: { lat: Number(m.base_lat ?? 42.348), lng: Number(m.base_lng ?? -83.058) },
+    serviceRadiusMiles: Number(m.service_radius_miles ?? 12),
   };
 }
 async function putSetting(key: string, value: string) {
@@ -442,8 +442,8 @@ export async function unflagConversation(conversationId: string) {
   emit("conversations");
 }
 /** Sends a message as a simulated customer. The agent picks it up exactly like a real DM. Returns the conversation id. */
-export async function sendSimulatedCustomerMessage(text: string): Promise<string> {
-  const existing: any[] = await q(db.from("conversations").select("id").eq("channel", "simulated").limit(1), "simulator");
+export async function sendSimulatedCustomerMessage(text: string, name = "Simulated Customer"): Promise<string> {
+  const existing: any[] = await q(db.from("conversations").select("id").eq("channel", "simulated").eq("name", name).limit(1), "simulator");
   const now = new Date().toISOString();
   let id: string | undefined = existing[0]?.id;
   if (!id) {
@@ -451,7 +451,7 @@ export async function sendSimulatedCustomerMessage(text: string): Promise<string
       db
         .from("conversations")
         .insert({
-          name: "Simulated Customer",
+          name,
           channel: "simulated",
           category: "inquiry",
           tags: ["Inquiry"],
@@ -468,7 +468,21 @@ export async function sendSimulatedCustomerMessage(text: string): Promise<string
   }
   await q(db.from("messages").insert({ conversation_id: id, sender: "customer", body: text, processed: false }), "simulator message");
   emit("messages", "conversations");
+  invokeAgent(id as string);
   return id as string;
+}
+
+/**
+ * Wakes the server-side agent for a conversation. The agent function holds the Baseten key; the browser never sees it.
+ * Fire and forget: results arrive through the database (realtime), exactly like a WhatsApp message would.
+ */
+function invokeAgent(conversationId: string) {
+  Promise.resolve(db.functions.invoke("agent", { body: { conversation_id: conversationId } }))
+    .then((res: any) => {
+      if (res?.error) console.warn("[skapter] agent call failed:", res.error.message ?? res.error);
+    })
+    .catch((e: unknown) => console.warn("[skapter] agent call failed", e))
+    .finally(() => emit("messages", "conversations", "inventory", "bookings", "log"));
 }
 
 // ---------- Agent ----------
@@ -617,34 +631,15 @@ export async function getDashboard() {
   };
 }
 
-/** Owner-triggered demo button. Logged as "system" (not a model call). */
+/**
+ * "Run demo booking": sends a simulated customer DM. The REAL agent (Muse Spark Open on Baseten)
+ * reads it, calls tools, and replies. Nothing here is scripted or faked; results show up in the
+ * Inbox, Execution Log, Inventory and Calendar as the agent writes them.
+ */
 export async function runDemoBooking() {
-  const booking = { title: "Lucía Morales · Full Detail (demo)", date: todayIso(), time: "14:00", lat: 42.385, lng: -82.976, service: "Full Detail" as const };
-  await addBooking(booking);
-  await logAction("create_booking", `Demo booking: ${booking.title}`, "ok", "system");
-  emit("log");
-  return booking;
-}
-
-const DEMO_CUSTOMER = "Alex Rivera";
-const DEMO_BODY = "Can I get a full detail this Thursday at 10:00 in 48224 for a medium SUV? Also want a clean finish.";
-
-/** Live demo: ensures Alex Rivera's conversation exists, runs the `agent` edge function, then refreshes the cockpit. */
-export async function runLiveAgentDemo() {
-  const existing = await q<any[]>(db.from("conversations").select("id").eq("name", DEMO_CUSTOMER).limit(1), "find demo conversation");
-  let conversationId: string = existing?.[0]?.id;
-  if (!conversationId) {
-    const created = await q<any>(db.from("conversations").insert({ name: DEMO_CUSTOMER, channel: "simulated", category: "booking" }).select("id").single(), "create demo conversation");
-    conversationId = created.id;
-  }
-  const pending = await q<any[]>(db.from("messages").select("id").eq("conversation_id", conversationId).eq("processed", false).limit(1), "find pending message");
-  if (!pending?.length) await q(db.from("messages").insert({ conversation_id: conversationId, sender: "customer", body: DEMO_BODY, processed: false }).select("id"), "insert demo message");
-  try {
-    const { invokeAgent } = await import("@/services/agentApi");
-    return await invokeAgent(conversationId);
-  } finally {
-    emit("conversations", "messages", "log", "inventory", "bookings");
-  }
+  const text = "Hi! I'd like to book a Premium Interior for my Honda CR-V this Thursday at 10 AM. I'm in Detroit, ZIP 48224.";
+  const conversationId = await sendSimulatedCustomerMessage(text, "Alex Rivera");
+  return { conversationId, text };
 }
 
 export async function resetDemo() {
