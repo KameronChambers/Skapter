@@ -1,5 +1,5 @@
 import { createFileRoute, type ErrorComponentProps } from "@tanstack/react-router";
-import { Bot, ChevronDown, Filter as FilterIcon, Flag, Instagram, Search, Send, Smartphone, User } from "lucide-react";
+import { Bot, ChevronDown, Filter as FilterIcon, Flag, ImagePlus, Instagram, Search, Send, Smartphone, User, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   sendOwnerMessage,
   sendSimulatedCustomerMessage,
   unflagConversation,
+  uploadCustomerPhoto,
   INBOX_FILTERS,
   matchesFilters,
   type Channel,
@@ -188,7 +189,8 @@ function Thread({ conv }: { conv: Conversation }) {
               )}
             >
               {m.sender === "agent" && <span className="mb-1 flex items-center gap-1 text-[10px] text-primary"><Bot className="size-3" />AI</span>}
-              {m.text}
+              {m.imageUrl && <img src={m.imageUrl} alt="Customer photo" className="mb-2 max-h-56 rounded-md border" />}
+              {m.imageUrl && m.text === "[Photo]" ? null : m.text}
             </div>
           </div>
         ))}
@@ -238,11 +240,29 @@ function Profile({ conv }: { conv: Conversation }) {
 function Simulator({ onSent }: { onSent: (id: string) => void }) {
   const [lang, setLang] = useState<"EN" | "ES">("EN");
   const [text, setText] = useState("");
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const send = async (t: string) => {
-    if (!t.trim()) return;
-    const id = await sendSimulatedCustomerMessage(t.trim());
+    if (!t.trim() && !photo) return;
+    const id = await sendSimulatedCustomerMessage(t.trim(), undefined, photo ?? undefined);
     setText("");
+    setPhoto(null);
     onSent(id);
+  };
+  const pickPhoto = async (file?: File) => {
+    if (!file) return;
+    setError("");
+    setUploading(true);
+    try {
+      setPhoto(await uploadCustomerPhoto(file));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
   return (
     <Panel title="Customer Simulator" action={<Pill tone="amber">Simulated</Pill>} bodyClassName="flex">
@@ -259,10 +279,25 @@ function Simulator({ onSent }: { onSent: (id: string) => void }) {
             Send: “{ES_MSG}”
           </Button>
         ) : (
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-            <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type as customer…" />
-            <Button type="submit" size="sm">Send</Button>
-          </form>
+          <>
+            {photo && (
+              <div className="relative mb-2 w-fit">
+                <img src={photo} alt="Photo to send" className="max-h-24 rounded-md border" />
+                <button type="button" aria-label="Remove photo" onClick={() => setPhoto(null)} className="absolute -right-2 -top-2 rounded-full border bg-background p-0.5">
+                  <X className="size-3" />
+                </button>
+              </div>
+            )}
+            {error && <p className="mb-2 text-xs text-danger">{error}</p>}
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(text); }}>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => pickPhoto(e.target.files?.[0])} />
+              <Button type="button" variant="outline" size="icon" disabled={uploading} onClick={() => fileRef.current?.click()} aria-label="Attach photo">
+                <ImagePlus className="size-4" />
+              </Button>
+              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={uploading ? "Uploading photo…" : "Type as customer…"} />
+              <Button type="submit" size="sm" disabled={uploading}>Send</Button>
+            </form>
+          </>
         )}
       </div>
     </Panel>
