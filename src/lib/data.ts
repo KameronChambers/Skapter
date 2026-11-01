@@ -41,6 +41,7 @@ export interface Message {
   sender: Sender;
   text: string;
   at: number;
+  imageUrl?: string;
 }
 export interface InventoryItem {
   id: string;
@@ -419,10 +420,10 @@ export async function getConversations(): Promise<(Conversation & { preview: str
 }
 export async function getMessages(conversationId: string): Promise<Message[]> {
   const rows: any[] = await q(
-    db.from("messages").select("id,conversation_id,sender,body,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }),
+    db.from("messages").select("id,conversation_id,sender,body,image_url,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }),
     "messages",
   );
-  return rows.map((r) => ({ id: r.id, conversationId: r.conversation_id, sender: r.sender, text: r.body, at: Date.parse(r.created_at) }));
+  return rows.map((r) => ({ id: r.id, conversationId: r.conversation_id, sender: r.sender, text: r.body, at: Date.parse(r.created_at), ...(r.image_url ? { imageUrl: r.image_url } : {}) }));
 }
 export async function markRead(conversationId: string) {
   await q(db.from("conversations").update({ unread: false, agent_unread: false }).eq("id", conversationId), "mark read");
@@ -442,7 +443,7 @@ export async function unflagConversation(conversationId: string) {
   emit("conversations");
 }
 /** Sends a message as a simulated customer. The agent picks it up exactly like a real DM. Returns the conversation id. */
-export async function sendSimulatedCustomerMessage(text: string, name = "Simulated Customer"): Promise<string> {
+export async function sendSimulatedCustomerMessage(text: string, name = "Simulated Customer", imageUrl?: string): Promise<string> {
   const existing: any[] = await q(db.from("conversations").select("id").eq("channel", "simulated").eq("name", name).limit(1), "simulator");
   const now = new Date().toISOString();
   let id: string | undefined = existing[0]?.id;
@@ -466,7 +467,7 @@ export async function sendSimulatedCustomerMessage(text: string, name = "Simulat
   } else {
     await q(db.from("conversations").update({ unread: true, last_message_at: now }).eq("id", id), "simulator conversation");
   }
-  await q(db.from("messages").insert({ conversation_id: id, sender: "customer", body: text, processed: false }), "simulator message");
+  await q(db.from("messages").insert({ conversation_id: id, sender: "customer", body: text || "[Photo]", image_url: imageUrl ?? null, processed: false }), "simulator message");
   emit("messages", "conversations");
   invokeAgent(id as string);
   return id as string;
@@ -486,10 +487,48 @@ function invokeAgent(conversationId: string) {
 }
 
 // ---------- Agent ----------
-/** Placeholder: the chat box gets wired to the real agent function in a later step. */
+// Short memory so follow-ups like "draft one for her" work. Lives in this browser tab only.
+const ownerChatHistory: { role: "user" | "assistant"; content: string }[] = [];
+
+/** Owner chat: the "owner-chat" edge function answers from real inventory, bookings and conversations. */
 export async function askAgent(text: string): Promise<string> {
-  return `[placeholder] The agent isn't connected yet. You asked: "${text}"`;
+  try {
+    const res: any = await db.functions.invoke("owner-chat", { body: { message: text, history: ownerChatHistory.slice(-8) } });
+    if (res?.error) throw new Error(res.error.message ?? String(res.error));
+    if (!res?.data?.ok) throw new Error(res?.data?.error ?? "no answer");
+    const reply = String(res.data.reply);
+    ownerChatHistory.push({ role: "user", content: text }, { role: "assistant", content: reply });
+    emit("tasks", "log");
+    return reply;
+  } catch (e) {
+    console.warn("[skapter] owner chat failed", e);
+    return `I couldn't reach the agent just now (${e instanceof Error ? e.message : "unknown error"}). Check the Errors tab.`;
+  }
 }
+
+/** Shrinks a photo in the browser (max 1024px, JPEG) so uploads are fast and model requests stay small. */
+async function shrinkImage(file: File, maxSide: number): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process that image."))), "image/jpeg", 0.82),
+  );
+}
+
+/** Uploads a customer photo to the "customer-photos" bucket and returns its public URL. Use only your own test photos. */
+export async function uploadCustomerPhoto(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("Please choose an image file.");
+  const blob = await shrinkImage(file, 1024);
+  const path = `${Date.now()}-${uid()}.jpg`;
+  const up = await db.storage.from("customer-photos").upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (up.error) throw new Error(`Photo upload failed: ${up.error.message}`);
+  return db.storage.from("customer-photos").getPublicUrl(path).data.publicUrl as string;
+}
+
 export async function getRules(): Promise<Rule[]> {
   const rows: any[] = await q(
     db.from("agent_rules").select("id,text,enabled").order("created_at", { ascending: false }).order("text", { ascending: true }),
