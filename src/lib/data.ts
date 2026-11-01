@@ -487,17 +487,53 @@ function invokeAgent(conversationId: string) {
 }
 
 // ---------- Agent ----------
-// Short memory so follow-ups like "draft one for her" work. Lives in this browser tab only.
-const ownerChatHistory: { role: "user" | "assistant"; content: string }[] = [];
+// ---------- Owner chat (saved in the database; kept 30 days, as in the product spec) ----------
+export interface OwnerChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  at: number;
+}
+const CHAT_RETENTION_DAYS = 30;
+
+/** Saved owner-chat history, oldest first. Anything older than 30 days is removed. */
+export async function getOwnerChat(): Promise<OwnerChatMessage[]> {
+  const cutoff = new Date(Date.now() - CHAT_RETENTION_DAYS * 86400000).toISOString();
+  await db.from("owner_chat").delete().lt("created_at", cutoff);
+  const rows: any[] = await q(
+    db.from("owner_chat").select("id,role,content,created_at").order("created_at", { ascending: true }).limit(200),
+    "owner chat",
+  );
+  return rows.map((r) => ({ id: r.id, role: r.role, content: r.content, at: Date.parse(r.created_at) }));
+}
+export async function clearOwnerChat() {
+  await q(db.from("owner_chat").delete().not("id", "is", null), "clear chat");
+}
+async function saveChat(role: "user" | "assistant", content: string) {
+  try {
+    await db.from("owner_chat").insert({ role, content });
+  } catch (e) {
+    console.warn("[skapter] could not save chat message", e); // the chat itself still works
+  }
+}
 
 /** Owner chat: the "owner-chat" edge function answers from real inventory, bookings and conversations. */
 export async function askAgent(text: string): Promise<string> {
   try {
-    const res: any = await db.functions.invoke("owner-chat", { body: { message: text, history: ownerChatHistory.slice(-8) } });
+    // recent saved turns give the model context for follow-ups like "draft one for her"
+    let history: { role: "user" | "assistant"; content: string }[] = [];
+    try {
+      const rows: any[] = await q(db.from("owner_chat").select("role,content").order("created_at", { ascending: false }).limit(8), "history");
+      history = rows.reverse().map((r) => ({ role: r.role, content: r.content }));
+    } catch {
+      /* works without saved history */
+    }
+    await saveChat("user", text);
+    const res: any = await db.functions.invoke("owner-chat", { body: { message: text, history } });
     if (res?.error) throw new Error(res.error.message ?? String(res.error));
     if (!res?.data?.ok) throw new Error(res?.data?.error ?? "no answer");
     const reply = String(res.data.reply);
-    ownerChatHistory.push({ role: "user", content: text }, { role: "assistant", content: reply });
+    await saveChat("assistant", reply);
     emit("tasks", "log");
     return reply;
   } catch (e) {
@@ -683,6 +719,7 @@ export async function runDemoBooking() {
 
 export async function resetDemo() {
   await q(db.rpc("reset_demo"), "reset demo");
+  try { await clearOwnerChat(); } catch { /* table may not exist yet */ }
   manualShopping.clear();
   emit("conversations", "messages", "inventory", "bookings", "log", "rules", "tasks", "settings");
 }
