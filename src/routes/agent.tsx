@@ -67,14 +67,22 @@ function ChatTab() {
   const [msgs, setMsgs] = useState<{ role: "you" | "agent"; text: string }[]>([]);
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
+  const [pending, setPending] = useState(false);
   const recRef = useRef<SpeechRec | null>(null);
 
   const send = async (t: string) => {
-    if (!t.trim()) return;
+    if (!t.trim() || pending) return;
     setMsgs((m) => [...m, { role: "you", text: t }]);
     setText("");
-    const reply = await askAgent(t);
-    setMsgs((m) => [...m, { role: "agent", text: reply }]);
+    setPending(true);
+    try {
+      const reply = await askAgent(t);
+      setMsgs((m) => [...m, { role: "agent", text: reply }]);
+    } catch {
+      setMsgs((m) => [...m, { role: "agent", text: "Sorry, I couldn't reach the agent. Check the Errors tab." }]);
+    } finally {
+      setPending(false);
+    }
   };
 
   const toggleMic = () => {
@@ -96,10 +104,11 @@ function ChatTab() {
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
         {msgs.length === 0 && <p className="text-sm text-muted-foreground">Ask the agent anything about your business.</p>}
         {msgs.map((m, i) => (
-          <div key={i} className={m.role === "you" ? "ml-auto max-w-[70%] rounded-lg border bg-accent px-3 py-2 text-sm" : "max-w-[70%] rounded-lg border px-3 py-2 text-sm"}>
+          <div key={i} className={m.role === "you" ? "ml-auto max-w-[70%] whitespace-pre-wrap rounded-lg border bg-accent px-3 py-2 text-sm" : "max-w-[70%] whitespace-pre-wrap rounded-lg border px-3 py-2 text-sm"}>
             {m.text}
           </div>
         ))}
+        {pending && <div className="max-w-[70%] rounded-lg border px-3 py-2 text-sm text-muted-foreground">Thinking…</div>}
       </div>
       <div className="flex flex-wrap gap-2">
         {examples.map((e) => (
