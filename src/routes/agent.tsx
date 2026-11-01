@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, Clock, Mic, MicOff, Send, ShieldCheck, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useData } from "@/hooks/use-data";
-import { askAgent, deleteRule, getDashboard, getErrors, getExecutionLog, getRules, saveRule, toggleRule } from "@/lib/data";
+import { askAgent, clearOwnerChat, deleteRule, getDashboard, getErrors, getExecutionLog, getOwnerChat, getRules, saveRule, toggleRule } from "@/lib/data";
 import { Ring, CountUp, toolIcons } from "@/components/skapter/visuals";
 import { Dot, PageTitle, Panel, Pill, fmtTime } from "@/components/skapter/ui";
 
@@ -70,6 +70,19 @@ function ChatTab() {
   const [pending, setPending] = useState(false);
   const recRef = useRef<SpeechRec | null>(null);
 
+  // load the saved conversation so it is still here after leaving the page
+  useEffect(() => {
+    let alive = true;
+    getOwnerChat()
+      .then((rows) => {
+        if (!alive) return;
+        const saved = rows.map((r) => ({ role: (r.role === "user" ? "you" : "agent") as "you" | "agent", text: r.content }));
+        setMsgs((cur) => (cur.length ? cur : saved));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const send = async (t: string) => {
     if (!t.trim() || pending) return;
     setMsgs((m) => [...m, { role: "you", text: t }]);
@@ -114,6 +127,11 @@ function ChatTab() {
         {examples.map((e) => (
           <Button variant="outline" size="sm" key={e} className="pill h-auto hover:bg-accent" onClick={() => send(e)}>{e}</Button>
         ))}
+        {msgs.length > 0 && (
+          <Button variant="ghost" size="sm" className="ml-auto h-auto text-muted-foreground" onClick={async () => { try { await clearOwnerChat(); } catch { /* ignore */ } setMsgs([]); }}>
+            Clear chat
+          </Button>
+        )}
       </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(text); }}>
         <Button type="button" variant={listening ? "secondary" : "outline"} size="icon" onClick={toggleMic} aria-label="Voice input">
