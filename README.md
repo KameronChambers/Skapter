@@ -1,3 +1,4 @@
+=== README.md ===
 # Skapter 
 
 > **Autonomous merchant operations and deterministic transaction engine for conversational social commerce.**  
