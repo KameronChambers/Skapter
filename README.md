@@ -1,182 +1,145 @@
-=== README.md ===
-# Skapter 
+# Skapter
 
-> **Autonomous merchant operations and deterministic transaction engine for conversational social commerce.**  
-> Built for the **Meta Global AI Developer Hackathon × Cerebral Valley** | **Track:** Indie Developer | **Theme:** *Build for Your World*
+**An autonomous agent that runs a small service business's customer DMs: it quotes real prices, checks supplies, holds the time slot, reads customer photos, and tells the owner when a human is needed.**
 
-<p align="left">
-  <img src="https://img.shields.io/badge/License-MIT-zinc.svg?style=flat-square" alt="License: MIT" />
-  <img src="https://img.shields.io/badge/Meta_Model-Muse_Spark_Open_1026-blue.svg?style=flat-square" alt="Meta Model: Muse Spark Open" />
-  <img src="https://img.shields.io/badge/Platform-WhatsApp_Cloud_API-25D366.svg?style=flat-square" alt="Meta Platform: WhatsApp Cloud API" />
-  <img src="https://img.shields.io/badge/Stack-React_|_Vite_|_Tailwind_|_Supabase-000000.svg?style=flat-square" alt="Stack" />
-  <img src="https://img.shields.io/badge/Status-Built_at_Hackathon-emerald.svg?style=flat-square" alt="Status" />
-</p>
+Built for the **Meta Global AI Developer Hackathon x Cerebral Valley** | Track: **Indie Developer** | Problem statement: **Build for Your World**
+
+Built by the owner of **SudBudd MD**, a mobile car detailing business in Detroit, to fix his own inbox.
 
 ---
 
-## ⚡ Executive Summary
+## The problem
 
-**Skapter OS** is an autonomous operational control center engineered for independent service providers and social brands converting customer demand inside direct messaging channels (WhatsApp, Instagram DMs). 
+- Customers of independent service businesses book through DMs. The inbox is disconnected from supplies, prices and the calendar.
+- The owner copy-pastes prices, double-checks stock by hand, and replies late. (One customer in the demo data waited 22 hours.)
+- Plain chatbots guess prices and over-promise. Two customers can claim the last of something at the same time.
 
-Rather than deploying an unconstrained conversational chatbot that can hallucinate quotes or drop orders, Skapter pairs **Meta’s open-weight Muse Spark Open** model with schema-validated tool calling to execute deterministic backend operations:
-1. **Parses Buyer Intent & Specs:** Automatically extracts vehicle class, service packages, and physical retail upsells from unstructured natural language text or audio messages.
-2. **Executes Atomic Inventory Locks:** Decrements physical stock and reserves calendar time-slots with an expiring 15-minute Time-To-Live (TTL) hold in PostgreSQL to prevent double-booking and stockouts.
-3. **Issues Dynamic Checkout Links:** Stages instant, bundled Stripe checkout sessions combining labor deposits and retail goods.
-4. **Maintains Merchant Oversight:** Feeds live state into an institutional merchant operations console equipped with a Supervisor circuit breaker, live execution traces, and automated supply replenishment decks.
+## What it does
 
----
-
-## 📌 Problem & Humanity Focus: The Context Void
-
-Independent operators (e.g., mobile detailers, barbers, field technicians) process a significant portion of their sales pipeline through direct social messages. However, native social messaging platforms are operational dead zones:
-* **The Manual Friction:** Business owners waste hours weekly copy-pasting addresses, typing out payment links, and cross-checking stock across fragmented spreadsheets.
-* **The Unreliable Bot Trap:** Standard rule-based bots fail on conversational ambiguity, while unconstrained generative chatbots hallucinate invalid pricing or offer unapproved discounts.
-* **The Race-Condition Bottleneck:** When two customers inquire about the last available appointment or physical retail product simultaneously, manual human latency leads to double-booking, cart abandonment, and customer churn.
+1. A customer messages the business (text, photo, English or Spanish).
+2. The agent (**Muse Spark Open**) reads it and calls tools: quote a price, check supplies, check the service area, hold a slot.
+3. A **Postgres function with row locking** holds the supplies and time slot for 15 minutes, so the same supplies can't be sold twice.
+4. The agent replies, and every step lands in the **Execution Log** with the real model name and timing.
+5. Code-level guards block wrong prices and unauthorized discounts, and a request for a human flags the chat for the owner.
+6. The owner sees everything live in a cockpit (Inbox, Agent, Inventory, calendar and job map), and can ask the agent questions about the business.
 
 ---
 
-## 🏗️ Architecture & Data Flow
+## Status at a glance
 
-Skapter enforces an architectural separation between non-deterministic language understanding and deterministic business rules:
+| Capability | Status |
+| :-- | :-- |
+| Autonomous agent loop on Muse Spark Open (served on Baseten), with tool calling | Working, demoed |
+| Supply holds: atomic, 15-minute expiry, deducted per service recipe and vehicle size (S/M/L) | Working, demoed |
+| Service-area check (ZIP to distance) and time-slot conflict check | Working |
+| Photo to service recommendation (Muse Spark Open vision) | Working via the Customer Simulator |
+| Multilingual replies | Working (Spanish tested) |
+| Guards: unlisted prices, price attached to the wrong service, discount offers, human-request rule, one self-correction retry | Working |
+| Owner chat on live data (inventory, bookings, conversations), saved 30 days | Working |
+| Live cockpit (realtime Inbox, Agent, Inventory, calendar, job map) | Working |
+| WhatsApp Cloud API (webhook + replies) | **Code written, NOT verified end to end.** The demo uses the Customer Simulator, which feeds the same pipeline. |
+| Instagram / Messenger | **Not built.** The inbox shows channel badges on sample conversations only. |
+| Stripe checkout / payments | **Not built.** The agent holds supplies and the slot; the owner confirms payment. |
+| Meta Model API (Muse Spark 1.3) fallback | **Not built or used** |
+| Muse Voice Transcribe, SAM 3.1, Muse Image | **Not used.** (The mic button uses the browser's built-in speech recognition, not a Meta model.) |
+| Revenue chart, weekly performance report | **Sample data** |
+| Login / multi-tenant | **Not built.** Demo database policies are open. |
+
+---
+
+## How Meta models are used
+
+| Model | Where | What for |
+| :-- | :-- | :-- |
+| **Muse Spark Open** (`meta-models/muse-spark-open-1026`), open weights, served on Baseten | `supabase/functions/agent`, `supabase/functions/owner-chat` | Tool calling and reasoning for customer replies, vision for photos, multilingual replies, and the owner's business chat |
+
+Every model-driven row in the Execution Log carries `muse-spark-open`. Rows written by plain code (guards, owner button actions, sample data) carry `system`, never a model name.
+
+**Why open weights:** a small merchant can choose where inference runs and isn't locked into per-message pricing from a closed API.
+
+---
+
+## Architecture
 
 ```text
-[ Inbound Customer WhatsApp / DM ]
-                 │
-                 ▼
-[ Meta Webhook Ingestion Engine ]
-                 │
-                 ▼
-[ Provider Layer (Failover Architecture) ]
-├── Primary Endpoint: Muse Spark Open (Hosted via Baseten)
-└── Secondary Fallback: Muse Spark 1.3 (Meta Model API)
-                 │
-                 ▼
-[ Deterministic Tool-Call Parser ]
-├── parse_intent(service, zip, date, language)
-├── lookup_customer(handle, phone)
-├── check_calendar(open_slots, location)
-├── reserve_stock(sku, qty, ttl=15m)
-└── create_checkout(stripe_session)
-                 │
-                 ▼
-[ PostgreSQL / Supabase Ledger ] ◄─── Atomic Row-Level Locks (TTL)
-                 │
-                 ▼
-[ Skapter Merchant Cockpit ]
-├── Live Unified Inbox & Customer CRM Passport
-├── Real-Time Chemical & Physical Inventory Ledger
-└── Supervisor Mode (Human-in-the-Loop Circuit Breaker)
+Customer message (Customer Simulator today; WhatsApp code included, unverified)
+        |
+        v
+Supabase table: messages  --->  Edge Function "agent"
+                                 |  1. claims the new message (atomic)
+                                 |  2. calls Muse Spark Open on Baseten (text + photo)
+                                 |  3. runs tools against Postgres:
+                                 |       get_quote, reserve_booking, escalate_to_owner, classify_conversation
+                                 |  4. guards the reply (prices, discounts), one rewrite attempt if blocked
+                                 |  5. writes the reply + honest log rows
+                                 v
+Postgres (Supabase)  <-- reserve_booking(): row-locked supply holds, 15-minute expiry
+        |
+        v  realtime
+Cockpit (React): Inbox | Agent (rules, log, owner chat) | Inventory | Calendar + map
 ```
 
----
+Key files:
 
-## 🤖 Deep Meta Product Integration
-
-| Meta Product / Tool | Architectural Role | Implementation Scope |
-| :--- | :--- | :--- |
-| **Muse Spark Open** (`meta-models/muse-spark-open-1026`) | **Primary Agent Brain** | Open-weight model served via Baseten inference. Drives structured function calling, entity parsing, policy compliance, and cross-lingual translation. |
-| **Meta Model API** (`Muse Spark 1.3`) | **High-Availability Fallback** | Secondary provider layer fallback configured with an 8–10s timeout to maintain system uptime if the primary inference node encounters rate limits. |
-| **WhatsApp Cloud API** | **Live Ingestion Funnel** | Handles live inbound and outbound messaging using Meta’s test business account and webhook infrastructure. |
-| **Muse Voice Transcribe** | **Multimodal Voice-to-Action** | Transcribes hands-free technician audio logs and customer voice notes directly into structured JSON tool arguments. |
-| **SAM 3.1 & Spark Vision** *(Roadmap)* | **Visual Damage Assessment** | Segments customer vehicle photos (e.g., paint scratch severity) to recommend tailored service tiers before staging a quote. |
-
-### Why Open-Weight Models Matter for Independent Commerce
-Closed commercial LLMs impose high per-message API fees and require routing private customer data (residential addresses, contact details, gate codes) through third-party servers. Using **Meta's open-weight Muse Spark Open** allows merchants to run cost-effective, audited, and privacy-compliant inference pipelines on infrastructure they control with zero data retention.
+- `supabase/schema.sql`: tables, the atomic `reserve_booking` / `confirm_reservation` functions, sample-data reset
+- `supabase/functions/agent/index.ts`: the autonomous agent
+- `supabase/functions/owner-chat/index.ts`: the owner's business assistant
+- `supabase/functions/whatsapp/index.ts`: WhatsApp webhook with signature verification (unverified end to end)
+- `src/lib/data.ts`: the app's single data layer (reads, writes, realtime)
 
 ---
 
-## 🛡️ Autonomous Operational Philosophy
+## Engineering notes
 
-1. **Event-Driven:** Inbound customer inquiries trigger autonomous tool-execution pipelines with zero merchant intervention.
-2. **Proactive Scheduling:** Automated background jobs monitor abandoned carts, alert the owner to neglected threads (e.g., customer waiting > 22 hours), and populate morning restock tasks.
-3. **Strictly Rule-Bound:** Plain-text merchant policy presets are injected into the agent prompt and reinforced by deterministic output validators (e.g., unauthorized discounts or non-existent SKUs are blocked programmatically).
-4. **Transparently Auditable:** Every tool execution, latency metric, and error boundary catch is recorded in the **Execution Log**.
-5. **Supervisor Mode Circuit Breaker:** High-ticket quotes can be toggled to require 1-click human verification before outbound dispatch.
-
----
-
-## 🛠️ Deterministic Agent Toolset
-
-| Tool Name | Purpose | Execution Logic |
-| :--- | :--- | :--- |
-| `parse_intent` | Ingestion & Extraction | Extracts service class, location/ZIP, scheduling constraints, urgency, and language. |
-| `lookup_customer` | CRM Reconciliation | Fetches or creates customer records, vehicle specifications, and historical spend. |
-| `check_calendar` | Capacity Planning | Queries open booking slots within the localized Detroit service boundary ($\le 20\text{ miles}$). |
-| `reserve_stock` | Atomic Inventory Lock | Executes a row-level lock in PostgreSQL with an expiring 15-minute TTL hold. |
-| `create_checkout` | Payment Generation | Constructs a dynamic Stripe checkout link bundling labor deposits and physical SKUs. |
-| `book_slot` | Calendar Commit | Confirms appointment scheduling upon verified payment webhook receipt. |
-| `escalate_to_owner` | Human Escalation | Flags the conversation and dispatches a merchant alert when human review is requested. |
-| `draft_reply` | Contextual Composition | Composes an outbound message constrained by merchant tone and business guidelines. |
+- **No overselling.** `reserve_booking` locks inventory rows, subtracts active holds from on-hand stock, and returns the exact shortage if anything is short. Holds expire after 15 minutes.
+- **Real recipes.** Each service deducts specific amounts of each supply, scaled by vehicle size, from SudBudd MD's actual menu.
+- **The model is not the pricing authority.** Prices come from the database. A guard rejects any dollar amount that isn't on the list, and any price written next to the wrong service. A rejected reply gets one rewrite attempt before a safe holding message is used.
+- **Honest failure.** If the model is unavailable or returns nothing, the owner is flagged, a holding message is sent, and the log says why. No fabricated results.
+- **Credit protection.** The public function endpoints are rate-limited per hour.
 
 ---
 
-## 💻 Tech Stack & Dependencies
+## Hackathon compliance
 
-* **Frontend Dashboard:** React 18, Vite, TypeScript, Tailwind CSS, Lexend Typography, Lucide Icons
-* **Agent Engine:** Meta Muse Spark Open (`muse-spark-open-1026`), Meta Model API (`Muse Spark 1.3`)
-* **Database & Atomic Locks:** Supabase / PostgreSQL (Row-level locking with expiring timestamps)
-* **Payment Pipeline:** Stripe API (Test-mode dynamic session creation)
-* **Communication APIs:** Meta WhatsApp Cloud API (Webhooks)
-
----
-
-## 🚀 Quickstart & Local Installation
-
-### Prerequisites
-* Node.js 18+ and npm
-* Git
-* Baseten API Key or Meta Model API Key
-* Supabase Account & Stripe Test Key
-
-### 1. Clone the Repository
-```bash
-git clone [https://github.com/your-username/skapter.git](https://github.com/your-username/skapter.git)
-cd skapter
-```
-
-### 2. Configure Environment Variables
-Create a `.env` file in the project root:
-```env
-# Inference Providers
-BASETEN_API_KEY=your_baseten_key
-META_MODEL_API_KEY=your_meta_model_api_key
-PRIMARY_MODEL_STRING=meta-models/muse-spark-open-1026
-
-# Meta WhatsApp Cloud API
-WHATSAPP_TOKEN=your_system_user_token
-WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
-WEBHOOK_VERIFY_TOKEN=your_custom_verify_token
-
-# Persistence & Billing
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-STRIPE_SECRET_KEY=your_stripe_test_secret_key
-```
-
-### 3. Install Dependencies & Launch
-```bash
-npm install
-npm run dev
-```
-Open `http://localhost:5173` in your browser to view the console.
+- **Built during the hackathon.** All code in this repository was written during the hackathon (see the commit history). Prices and supply recipes come from SudBudd MD's real menu; customers, messages, addresses and stock counts are synthetic.
+- **How it was built.** UI scaffolded with Lovable; backend, database and agent code written with AI coding assistance (Claude); open-source libraries (React, Vite, TanStack, Tailwind, shadcn/ui, Leaflet, Recharts, Supabase client).
+- **Third-party services.** Baseten (inference for Muse Spark Open), Supabase (database, realtime, edge functions, storage), Zippopotam (free ZIP lookup).
+- **Open source.** MIT licensed.
 
 ---
 
-## 💬 Architectural & Technical FAQ
+## Run it yourself
 
-#### Q1: How does Skapter prevent inventory overselling during concurrent DM rushes?
-**A:** When `reserve_stock` is executed, the backend creates an atomic row lock in PostgreSQL. The physical SKU or service slot count decrements immediately with a 15-minute Time-To-Live (TTL). If checkout is completed via Stripe within 15 minutes, the reservation commits. If the session expires, a background cron function automatically releases the lock and returns the unit to inventory.
+1. Create a free **Supabase** project.
+2. In the SQL Editor, run `supabase/schema.sql` on the empty project.
+3. Create two Edge Functions, `agent` and `owner-chat`, from the files under `supabase/functions/`. Turn **off** "Verify JWT" for each.
+4. Add the secret `BASETEN_API_KEY` (Edge Functions, Secrets). Use model string `meta-models/muse-spark-open-1026`.
+5. Create a `.env` in the project root with your project's **public** values:
+   ```env
+   VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=your_public_publishable_key
+   ```
+6. `npm install` then `npm run dev`, and open the URL printed in the terminal.
+7. In **Inbox, Customer Simulator**, send: *"Hi! I'd like to book a Premium Interior for my Honda CR-V this Thursday at 10 AM. I'm in Detroit, ZIP 48224."*
 
-#### Q2: What prevents the agent from hallucinating prices or unauthorized discounts?
-**A:** The language model acts solely as an entity extractor, not a pricing authority. Pricing is determined deterministically by joining extracted SKUs with an immutable database pricing table. Outbound replies containing unauthorized discounts are caught and blocked by an output filter that validates against merchant policy rules.
+Optional (unverified): add `supabase/functions/whatsapp` plus `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`.
 
-#### Q3: Why is a dual-provider architecture used?
-**A:** Real-world merchant tools cannot go down during client conversations. If the primary Baseten endpoint encounters rate-limiting or latency exceeding 8 seconds, the provider layer automatically routes the tool call through the secondary Meta Model API endpoint, surfacing an honest `[Live / Fallback]` badge on the dashboard.
+**Never put secret keys in this repository.** Only the public publishable key belongs in `.env`.
 
 ---
 
-## 🏆 Hackathon Compliance & Authenticity
+## Known limitations
 
-* **Built Exclusively During the Hackathon:** All application code, agent logic, tool definitions, database schemas, and console components were built from scratch between **October 27 and November 4, 2026**.
-* **Domain Authenticity:** Modeled after the active operational workflow of **SudBudd MD**, a mobile auto detailing service in Detroit, MI. All client data, addresses, and telephone numbers displayed in demonstrations are strictly synthetic.
-* **Open Source:** Licensed under the [MIT License](LICENSE).
+- Pending bookings aren't cancelled automatically when their 15-minute hold expires (the supplies are released, the booking row stays).
+- Payment isn't collected; the owner confirms.
+- The demo database allows open access and the photo bucket is public. Use synthetic data and your own test photos only.
+- The tests in `src/test` were written for an earlier in-memory prototype and are out of date.
+- Agent answers on hard questions can take 5 to 10 seconds.
+
+## Roadmap
+
+Connect WhatsApp and Instagram live, add Stripe checkout and payment confirmation, auto-cancel expired holds, Meta Model API fallback, voice notes with Muse Voice Transcribe, more business types beyond detailing.
+
+## License
+
+MIT, see [LICENSE](LICENSE).ICENSE).
